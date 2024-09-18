@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "ncteqpy"
+version = "0.1.0"
+description = "Analysis framework for nCTEQ Parton Distribution Function fits"
+authors = ["Jan Wissmann <jan.wissmann.jw@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pyyaml = "^6.0.2"
+numpy = "^2.1.1"
+pandas = "^2.2.2"
+matplotlib = "^3.9.2"
+scipy = "^1.14.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
