@@ -24,31 +24,31 @@ class Chi2(jaml.YAMLWrapper):
     _parameters_last_values: npt.NDArray[np.float64] | None = None
     _parameters_input_values: npt.NDArray[np.float64] | None = None
     _parameters_values_at_min: npt.NDArray[np.float64] | None = None
-    _chi2_last_value: float | None = None
-    _chi2_last_value_with_penalty: float | None = None
-    _chi2_last_value_per_data: dict[int, float] | None = None
-    _chi2_snapshots_parameters: pd.DataFrame | None = None
-    _chi2_snapshots_values: npt.NDArray[np.float64] | None = None
-    _chi2_snapshots_breakdown_points: pd.DataFrame | None = None
-    _chi2_snapshots_breakdown_datasets: pd.DataFrame | None = None
+    _last_value: float | None = None
+    _last_value_with_penalty: float | None = None
+    _last_value_per_data: dict[int, float] | None = None
+    _snapshots_parameters: pd.DataFrame | None = None
+    _snapshots_values: npt.NDArray[np.float64] | None = None
+    _snapshots_breakdown_points: pd.DataFrame | None = None
+    _snapshots_breakdown_datasets: pd.DataFrame | None = None
 
-    # the traversing for these the members set here takes all about equal time, with negligible parsing time. Parsing them together is thus more efficient # TODO: not sure if chi2_snapshots_values should be here
+    # the traversing for these the members set here takes all about equal time, with negligible parsing time. Parsing them together is thus more efficient # TODO: not sure if snapshots_values should be here
     def _load_snapshots_without_breakdown_points(self) -> None:
 
-        self._chi2_snapshots_parameters = cast(
+        self._snapshots_parameters = cast(
             pd.DataFrame, self._unpickle("chi2_snapshots_parameters")
         )
-        self._chi2_snapshots_values = cast(
+        self._snapshots_values = cast(
             npt.NDArray[np.float64], self._unpickle("chi2_snapshots_values")
         )
-        self._chi2_snapshots_breakdown_datasets = cast(
+        self._snapshots_breakdown_datasets = cast(
             pd.DataFrame, self._unpickle("chi2_snapshots_breakdown_datasets")
         )
 
         if (
-            self._chi2_snapshots_parameters is None
-            or self._chi2_snapshots_values is None
-            or self._chi2_snapshots_breakdown_datasets is None
+            self._snapshots_parameters is None
+            or self._snapshots_values is None
+            or self._snapshots_breakdown_datasets is None
         ):
             pattern = jaml.Pattern(
                 {
@@ -65,24 +65,24 @@ class Chi2(jaml.YAMLWrapper):
                 list[dict[str, object]], jaml.nested_get(yaml, ["Chi2Fcn", "Snapshots"])
             )
 
-            self._chi2_snapshots_parameters = pd.DataFrame.from_records(
+            self._snapshots_parameters = pd.DataFrame.from_records(
                 [s["par"] for s in snapshots], columns=self.parameters_names
             )
-            self._chi2_snapshots_parameters.index.name = "id_snapshot"
-            self._chi2_snapshots_parameters.columns.name = "parameter"
+            self._snapshots_parameters.index.name = "id_snapshot"
+            self._snapshots_parameters.columns.name = "parameter"
 
-            self._chi2_snapshots_values = np.array([s["chi2Value"] for s in snapshots])
+            self._snapshots_values = np.array([s["chi2Value"] for s in snapshots])
 
-            self._chi2_snapshots_breakdown_datasets = pd.DataFrame.from_records(
+            self._snapshots_breakdown_datasets = pd.DataFrame.from_records(
                 [s["perDataBreakdown"] for s in snapshots]
             )
-            self._chi2_snapshots_breakdown_datasets.columns.name = "id_dataset"
-            self._chi2_snapshots_breakdown_datasets.index.name = "id_snapshot"
+            self._snapshots_breakdown_datasets.columns.name = "id_dataset"
+            self._snapshots_breakdown_datasets.index.name = "id_snapshot"
 
-            self._pickle(self._chi2_snapshots_parameters, "chi2_snapshots_parameters")
-            self._pickle(self._chi2_snapshots_values, "chi2_snapshots_values")
+            self._pickle(self._snapshots_parameters, "chi2_snapshots_parameters")
+            self._pickle(self._snapshots_values, "chi2_snapshots_values")
             self._pickle(
-                self._chi2_snapshots_breakdown_datasets,
+                self._snapshots_breakdown_datasets,
                 "chi2_snapshots_breakdown_datasets",
             )
 
@@ -90,11 +90,11 @@ class Chi2(jaml.YAMLWrapper):
     def _load_snapshots_breakdown_points(self) -> None:
         pickle_name = "chi2_snapshots_breakdown_points"
 
-        self._chi2_snapshots_breakdown_points = cast(
+        self._snapshots_breakdown_points = cast(
             pd.DataFrame, self._unpickle(pickle_name)
         )
 
-        if self._chi2_snapshots_breakdown_points is None:
+        if self._snapshots_breakdown_points is None:
             pattern = jaml.Pattern(
                 {"Chi2Fcn": {"Snapshots": [{"perPointBreakdown": None}]}}
             )
@@ -104,7 +104,7 @@ class Chi2(jaml.YAMLWrapper):
                 list[dict[str, object]], jaml.nested_get(yaml, ["Chi2Fcn", "Snapshots"])
             )
 
-            self._chi2_snapshots_breakdown_points = pd.DataFrame.from_records(
+            self._snapshots_breakdown_points = pd.DataFrame.from_records(
                 [
                     {
                         "id_snapshot": i,
@@ -121,10 +121,10 @@ class Chi2(jaml.YAMLWrapper):
                     | labels.kinvars_yaml_to_py
                 )
             )
-            self._chi2_snapshots_breakdown_points.set_index(
+            self._snapshots_breakdown_points.set_index(
                 ["id_snapshot", "id_point"], inplace=True
             )
-            self._pickle(self._chi2_snapshots_breakdown_points, pickle_name)
+            self._pickle(self._snapshots_breakdown_points, pickle_name)
 
     @property
     def parameters_names(self) -> list[str]:
@@ -227,68 +227,68 @@ class Chi2(jaml.YAMLWrapper):
         return self._parameters_values_at_min
 
     @property
-    def chi2_last_value(self) -> float:
-        if self._chi2_last_value is None or self._yaml_changed():
+    def last_value(self) -> float:
+        if self._last_value is None or self._yaml_changed():
             pattern = jaml.Pattern({"Chi2Fcn": {"LastValue": None}})
             yaml = self._load_yaml(pattern)
 
-            self._chi2_last_value = cast(
+            self._last_value = cast(
                 float, jaml.nested_get(yaml, ["Chi2Fcn", "LastValue"])
             )
 
-        return self._chi2_last_value
+        return self._last_value
 
     @property
-    def chi2_last_value_with_penalty(self) -> float:
-        if self._chi2_last_value_with_penalty is None or self._yaml_changed():
+    def last_value_with_penalty(self) -> float:
+        if self._last_value_with_penalty is None or self._yaml_changed():
             pattern = jaml.Pattern({"Chi2Fcn": {"LastValueWithPenalty": None}})
             yaml = self._load_yaml(pattern)
 
-            self._chi2_last_value_with_penalty = cast(
+            self._last_value_with_penalty = cast(
                 float, jaml.nested_get(yaml, ["Chi2Fcn", "LastValueWithPenalty"])
             )
 
-        return self._chi2_last_value_with_penalty
+        return self._last_value_with_penalty
 
     @property
-    def chi2_last_value_per_data(self) -> dict[int, float]:
-        if self._chi2_last_value_per_data is None or self._yaml_changed():
+    def last_value_per_data(self) -> dict[int, float]:
+        if self._last_value_per_data is None or self._yaml_changed():
             pattern = jaml.Pattern({"Chi2Fcn": {"LastValuePerData": None}})
             yaml = self._load_yaml(pattern)
 
-            self._chi2_last_value_per_data = cast(
+            self._last_value_per_data = cast(
                 dict[int, float], jaml.nested_get(yaml, ["Chi2Fcn", "LastValuePerData"])
             )
 
-        return self._chi2_last_value_per_data
+        return self._last_value_per_data
 
     @property
-    def chi2_snapshots_parameters(self) -> pd.DataFrame:
-        if self._chi2_snapshots_parameters is None or self._yaml_changed():
+    def snapshots_parameters(self) -> pd.DataFrame:
+        if self._snapshots_parameters is None or self._yaml_changed():
             self._load_snapshots_without_breakdown_points()
 
-        return self._chi2_snapshots_parameters  # type: ignore[return-value] # value cannot be None since it is set in the if clause
+        return self._snapshots_parameters  # type: ignore[return-value] # value cannot be None since it is set in the if clause
 
     @property
-    def chi2_snapshots_values(self) -> pd.DataFrame:
-        if self._chi2_snapshots_values is None or self._yaml_changed():
+    def snapshots_values(self) -> pd.DataFrame:
+        if self._snapshots_values is None or self._yaml_changed():
             self._load_snapshots_without_breakdown_points()
 
-        return self._chi2_snapshots_values  # type: ignore[return-value] # value cannot be None since it is set in the if clause
+        return self._snapshots_values  # type: ignore[return-value] # value cannot be None since it is set in the if clause
 
     @property
-    def chi2_snapshots_breakdown_datasets(self) -> pd.DataFrame:
-        if self._chi2_snapshots_breakdown_datasets is None or self._yaml_changed():
+    def snapshots_breakdown_datasets(self) -> pd.DataFrame:
+        if self._snapshots_breakdown_datasets is None or self._yaml_changed():
             self._load_snapshots_without_breakdown_points()
 
-        return self._chi2_snapshots_breakdown_datasets  # type: ignore[return-value] # value cannot be None since it is set in the if clause
+        return self._snapshots_breakdown_datasets  # type: ignore[return-value] # value cannot be None since it is set in the if clause
 
     @property
-    def chi2_snapshots_breakdown_points(self) -> pd.DataFrame:
-        if self._chi2_snapshots_breakdown_points is None or self._yaml_changed():
+    def snapshots_breakdown_points(self) -> pd.DataFrame:
+        if self._snapshots_breakdown_points is None or self._yaml_changed():
             self._load_snapshots_breakdown_points()
 
-        return self._chi2_snapshots_breakdown_points  # type: ignore[return-value] # value cannot be None since it is set in the if clause
+        return self._snapshots_breakdown_points  # type: ignore[return-value] # value cannot be None since it is set in the if clause
 
     # TODO: more sophisticated filtering
     # TODO: cuts
@@ -312,7 +312,7 @@ class Chi2(jaml.YAMLWrapper):
                     "Please provide either `id_dataset` or `type_experiment`"
                 )
             else:
-                points = self.chi2_snapshots_breakdown_points.loc[id_snapshot].query(
+                points = self.snapshots_breakdown_points.loc[id_snapshot].query(
                     "type_experiment == @type_experiment"
                 )
                 id_dataset = cast(
@@ -321,7 +321,7 @@ class Chi2(jaml.YAMLWrapper):
         else:
             if isinstance(id_dataset, int):
                 id_dataset = [id_dataset]
-            points = self.chi2_snapshots_breakdown_points.loc[id_snapshot].query(
+            points = self.snapshots_breakdown_points.loc[id_snapshot].query(
                 "id_dataset in @id_dataset"
             )
             types_experiment = points["type_experiment"].unique()
@@ -346,7 +346,7 @@ class Chi2(jaml.YAMLWrapper):
         #     save_path = pathlib.Path(save_path)
         #     pdf = mpl.backends.backend_pdf.PdfPages(save_path)
 
-        # gb = self.chi2_snapshots_breakdown_points.loc[id_snapshot].sort_values(["type_experiment", "id_dataset"]).groupby(["type_experiment", "id_dataset"])
+        # gb = self.snapshots_breakdown_points.loc[id_snapshot].sort_values(["type_experiment", "id_dataset"]).groupby(["type_experiment", "id_dataset"])
 
         if ax is None:
             kwargs_subplots = {"layout": "tight"} | kwargs_subplots
