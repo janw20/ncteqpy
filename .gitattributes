@@ -1,0 +1,2 @@
+doc/examples/datasets.ipynb filter=lfs diff=lfs merge=lfs -text
+doc/examples/data_vs_theory.ipynb filter=lfs diff=lfs merge=lfs -text
