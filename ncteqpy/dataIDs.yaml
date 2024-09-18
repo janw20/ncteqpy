@@ -1,0 +1,291 @@
+dataIDs: {
+
+  ############################################
+  ######### Single Inclusive Hadrons #########
+  ############################################
+
+  # PI0
+  4001: ["SIH/alicePi0.yaml", "ALICE 5TeV $\\pi^0$"],
+  4002: ["SIH/starPi0.yaml",  "STAR $\\pi^0$"],
+  4003: ["SIH/phenixPi0.yaml",  "PHENIX $\\pi^0$"],
+  4004: ["SIH/alice8TeVPi0.yaml",  "ALICE 8TeV $\\pi^0$"],
+  # Charged Pi
+  4101: ["SIH/aliceChargedPi.yaml", "ALICE 5TeV $\\pi^\\pm$"],
+  4102: ["SIH/starChargedPi.yaml", "STAR $\\pi^\\pm$"],
+  4103: ["SIH/phenixChargedPi.yaml", "PHENIX $\\pi^\\pm$"],
+  # Charged K
+  4201: ["SIH/aliceChargedK.yaml", "ALICE 5TeV $K^\\pm$"],
+  4203: ["SIH/phenixChargedK.yaml", "PHENIX $K^\\pm$"],
+  # Eta
+  4401: ["SIH/aliceEta.yaml", "ALICE 5TeV $\\eta$"],
+  4402: ["SIH/starEta.yaml", "STAR $\\eta$"],
+  4403: ["SIH/phenixEta.yaml", "PHENIX $\\eta$"],
+  4404: ["SIH/alice8TeVEta.yaml", "ALICE 8TeV $\\eta$"],
+  # proton-proton
+  14401: ["SIH/other_data/alice7TeVEta_pp.yaml", "ALICE data"],
+  14001: ["SIH/other_data/alice7TeVPi0_pp.yaml", "ALICE data\ \ \ "],
+  14002: ["SIH/other_data/phenixPi0_pp.yaml", "PHENIX data"],
+  14101: ["SIH/other_data/alice7TeVChargedPi_pp.yaml", "ALICE 7TeV pp Charged Pi"],
+  14201: ["SIH/other_data/alice7TeVChargedK_pp.yaml", "ALICE 7TeV pp Charged K"],
+
+  ############################################
+  ######## Deep Inelastic Scattering #########
+  ############################################
+
+  # DIS F2A/F2A
+  5111: ["DIS/cernna037a_5111.yaml", "NMC96 AlC"],
+  5112: ["DIS/cernna037b_5112.yaml", "NMC96 BeC"],
+  5116: ["DIS/cernna037f_5116.yaml", "NMC96 PbC"],
+  5119: ["DIS/cernna037i_5119.yaml", "NMC96 CaC"],
+  5120: ["DIS/cernna037j_5120.yaml", "NMC95 CaC"],
+  5122: ["DIS/cernna037l_5122.yaml", "NMC95 CaLi"],
+  5123: ["DIS/cernna037m_5123.yaml", "NMC96 CLi"],
+  5143: ["DIS/cernna037o_5143.yaml", "NMC96 FeC"],
+  5159: ["DIS/cernna_snc_5159.yaml", "NMC96 SnC"],
+  # DIS F2A/F2D
+  5101: ["DIS/cernna004a_5101.yaml", "BCDMS87 FeD"],
+  5102: ["DIS/cernna004b_5102.yaml", "BCDMS85 FeD"],
+  5103: ["DIS/cernna004c_5103.yaml", "BCDMS85 ND"],
+  5104: ["DIS/cernna028a_5104.yaml", "EMC93add CuD"],
+  5105: ["DIS/cernna028b_5105.yaml", "EMC93cha CuD"],
+  5106: ["DIS/cernna028c_5106.yaml", "EMC88 CuD"],
+  5107: ["DIS/cernna028d_5107.yaml", "EMC88 CD"],
+  5108: ["DIS/cernna028e_5108.yaml", "EMC88 SnD"],
+  5113: ["DIS/cernna037c_5113.yaml", "NMC95 CD"],
+  5114: ["DIS/cernna037d_5114.yaml", "NMC95re CD"],
+  5115: ["DIS/cernna037e_5115.yaml", "NMC95 LiD"],
+  5121: ["DIS/cernna037k_5121.yaml", "NMC95re CaD"],
+  5124: ["DIS/cernna037n_5124.yaml", "NMC95re He4D"],
+  # DIS sigA/sigD
+  5109: ["DIS/cernna028f_5109.yaml", "EMC90 CaD"],
+  5110: ["DIS/cernna028g_5110.yaml", "EMC90 CD"],
+  5125: ["DIS/fnale665a_5125.yaml", "FNAL-E665 CD"],
+  5126: ["DIS/fnale665b_5126.yaml", "FNAL-E665 CaD"],
+  5127: ["DIS/fnale665c_5127.yaml", "FNAL-E665 emcut XeD"],
+  5129: ["DIS/fnale665e_5129.yaml", "FNAL-E665 PbD"],
+  5131: ["DIS/slace049a_5131.yaml", "SLAC-E049 FeD"],
+  5132: ["DIS/slace139a_5132.yaml", "SLAC-E139 FeD"],
+  5133: ["DIS/slace140a_5133.yaml", "SLAC-E140 FeD"],
+  5134: ["DIS/slace049b_5134.yaml", "SLAC-E049 AlD"],
+  5135: ["DIS/slace139b_5135.yaml", "SLAC-E139 AgD"],
+  5136: ["DIS/slace139c_5136.yaml", "SLAC-E139 AlD"],
+  5137: ["DIS/slace139d_5137.yaml", "SLAC-E139 AuD"],
+  5138: ["DIS/slace139e_5138.yaml", "SLAC-E139 BeD"],
+  5139: ["DIS/slace139f_5139.yaml", "SLAC-E139 CD"],
+  5140: ["DIS/slace139g_5140.yaml", "SLAC-E139 CaD"],
+  5141: ["DIS/slace139h_5141.yaml", "SLAC-E139 He4D"],
+  5156: ["DIS/hermesq_he_5156.yaml", "HERMES He3D"],
+  5157: ["DIS/hermesq_n_5157.yaml", "HERMES ND"],
+  5158: ["DIS/hermesq_kr_5158.yaml", "HERMES KrD"],
+  # DIS F2D
+  5160: ["DIS/nmcf2dcor_5160.yaml", "NMC97 D"],
+  # DIS F2A/F2D from JLAB
+  9976: ["NON-ISO/jlabEG2c_Pb208_9976.yaml", "CLAS2019 PbD"],
+  9977: ["NON-ISO/jlabEG2c_Fe56_9977.yaml", "CLAS2019 FeD"],
+  9978: ["NON-ISO/jlabEG2c_Al27_9978.yaml", "CLAS2019 AlD"],
+  9979: ["NON-ISO/jlabEG2c_C12_9979.yaml", "CLAS2019 CD"],
+  9980: ["NON-ISO/jlabE03103_He4_9980.yaml", "HALLC2009 He4D"],
+  9981: ["NON-ISO/jlabE03103_He4_9981.yaml", "HALLC2009 He4D"],
+  9982: ["NON-ISO/jlabE03103_He3_9982.yaml", "HALLC2009 He3D"],
+  9983: ["NON-ISO/jlabE03103_He3_9983.yaml", "HALLC2009 He3D"],
+  9984: ["NON-ISO/jlabE03103_Cu64_9984.yaml", "HALLC2009 CuD"],
+  9985: ["NON-ISO/jlabE03103_Cu64_9985.yaml", "HALLC2009 CuD"],
+  9986: ["NON-ISO/jlabE03103_Be9_9986.yaml", "HALLC2009 BeD"],
+  9987: ["NON-ISO/jlabE03103_Be9_9987.yaml", "HALLC2009 BeD"],
+  9988: ["NON-ISO/jlabE03103_Au197_9988.yaml", "HALLC2009 AuD"],
+  9989: ["NON-ISO/jlabE03103_Au197_9989.yaml", "HALLC2009 AuD"],
+  9990: ["NON-ISO/jlabE03103_C12_9990.yaml", "HALLC2009 CD"],
+  9991: ["NON-ISO/jlabE03103_C12_9991.yaml", "HALLC2009 CD"],
+  9992: ["NON-ISO/jlabE03103_C12_9992.yaml", "HALLC2009 CD"],
+  9993: ["NON-ISO/jlabE03103_C12_9993.yaml", "HALLC2009 CD"],
+  9994: ["NON-ISO/jlabE03103_C12_9994.yaml", "HALLC2009 CD"],
+  9995: ["NON-ISO/jlabE03103_C12_9995.yaml", "HALLC2009 CD"],
+  9996: ["NON-ISO/jlabE03103_C12_9996.yaml", "HALLC2009 CD"],
+  9997: ["NON-ISO/jlabE03103_C12_9997.yaml", "HALLC2009 CD"],
+  9998: ["NON-ISO/jlabE03103_C12_9998.yaml", "HALLC2009 CD"],
+  9999: ["NON-ISO/jlabE03103_C12_9999.yaml", "HALLC2009 CD"],
+
+  ############################################
+  ################ Drell-Yan #################
+  ############################################
+
+  5201: ["DY/fnale866a_5201.yaml", "FNAL-E866 pFe"],
+  5202: ["DY/fnale866b_5202.yaml", "FNAL-E866 pW"],
+  5203: ["DY/fnale772a_5203.yaml", "FNAL-E772 pC"],
+  5204: ["DY/fnale772b_5204.yaml", "FNAL-E772 pCa"],
+  5205: ["DY/fnale772c_5205.yaml", "FNAL-E772 pFe"],
+  5206: ["DY/fnale772d_5206.yaml", "FNAL-E772 pW"],
+
+  ############################################
+  ############# W / Z production #############
+  ############################################
+
+  6211: ["WZPROD/atlas_wm_ppb.yaml", "ATLAS pPb W-"],
+  6213: ["WZPROD/atlas_wp_ppb.yaml", "ATLAS pPb W+"],
+  6215: ["WZPROD/atlas_z_ppb.yaml", "ATLAS pPb Z"],
+  6231: ["WZPROD/cms_wm_ppb.yaml", "CMS pPb W-"],
+  6232: ["WZPROD/cms_wm_r2_ppb.yaml", "CMS pPb W- Run2"],
+  6233: ["WZPROD/cms_wp_ppb.yaml", "CMS pPb W+"],
+  6234: ["WZPROD/cms_wp_r2_ppb.yaml", "CMS pPb W+ Run2"],
+  6235: ["WZPROD/cms_z_ppb.yaml", "CMS pPb Z"],
+  6236: ["WZPROD/cms_z_r2_ppb_lowMass_6236.yaml", "CMS pPb Z Run2 lowMass"],
+  6237: ["WZPROD/cms_z_r2_ppb_highMass_6237.yaml", "CMS pPb Z Run2 highMass"],
+  6255: ["WZPROD/alice_z_ppb_forward_6255.yaml","ALICE Z production Run2 forward  5.02 TeV"],
+  6256: ["WZPROD/alice_z_ppb_backward_6256.yaml","ALICE Z production Run2 backward  5.02 TeV"],
+  6257: ["WZPROD/alice_z_ppb_forward_6257.yaml","ALICE Z production Run2 forward  8.16 TeV"],
+  6258: ["WZPROD/alice_z_ppb_backward_6258.yaml","ALICE Z production Run2 backward  8.16 TeV"],
+  6251: ["WZPROD/alice_wm_ppb.yaml", "ALICE pPb W-"],
+  6253: ["WZPROD/alice_wp_ppb.yaml", "ALICE pPb W+"],
+  6275: ["WZPROD/lhcb_z_ppb.yaml", "LHCb pPb Z"],
+  6276: ["WZPROD/lhcb_z_r2_ppb_forward_6276.yaml", "LHCb pPb Z Run2 forward"],
+  6277: ["WZPROD/lhcb_z_r2_ppb_backward_6277.yaml", "LHCb pPb Z Run2 backward"],
+  6262: ["WZPROD/alice_wm_r2_ppb_backward_6262.yaml", "ALICE W- production Run2 backward"],
+  6261: ["WZPROD/alice_wm_r2_ppb_forward_6261.yaml","ALICE W- production Run2 forward"],
+  6263: ["WZPROD/alice_wp_r2_ppb_forward_6263.yaml", "ALICE W+ production Run2 forward"],
+  6264: ["WZPROD/alice_wp_r2_ppb_backward_6264.yaml", "ALICE W+ production Run2 backward"],
+
+  ############################################
+  ################ HQ ################
+  ############################################
+  3000: ["HQ/HQ_DUMMY_pp.yaml", "proton-proton dummy data"],
+  3999: ["HQ/HQ_DUMMY_pPb.yaml", "proton-lead dummy data"],
+
+  3001: ["HQ/CMS11_pJPSI_pp.yaml", "CMS 2011 $\\ \\ - \\ \\ pp\\longrightarrow J/\\psi$"],
+  3002: ["HQ/LHCb11_pJPSI_pp.yaml", "LHCb 2011 $\\ \\ - \\ \\ pp\\longrightarrow J/\\psi$"],
+  3003: ["HQ/ATLAS11_pJPSI_pp.yaml", "ATLAS 2011 $\\ \\ - \\ \\ pp\\longrightarrow J/\\psi$"],
+  3004: ["HQ/LHCb11_npJPSI_pp.yaml", "LHCb 2011 $\\ \\ - \\ \\ pp\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3005: ["HQ/CMS11_npJPSI_pp.yaml", "CMS 2011 $\\ \\ - \\ \\ pp\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3006: ["HQ/ATLAS11_npJPSI_pp.yaml", "ATLAS 2011 $\\ \\ - \\ \\ pp\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3007: ["HQ/CMS10_npJPSI_pp.yaml", "CMS 2010 $\\ \\ - \\ \\ pp\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3008: ["HQ/ALICE11_pD0_pp.yaml", "ALICE 2011 $\\ \\ - \\ \\ pp\\longrightarrow D^0$"],
+  3009: ["HQ/ALICE14_iY1S_pp.yaml", "ALICE 2014 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3010: ["HQ/LHCb12_iY1S_pp.yaml", "LHCb 2012 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3011: ["HQ/LHCb15_iY1S_pp7.yaml", "LHCb 2015 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3012: ["HQ/ATLAS12_iY1S_pp.yaml", "ATLAS 2012 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3013: ["HQ/CMS13_iY1S_pp.yaml", "CMS 2013 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3014: ["HQ/LHCb13_pD0_pp.yaml", "LHCb 2013 $\\ \\ - \\ \\ pp\\longrightarrow D^0$"],
+  3015: ["HQ/LHCb15_iY1S_pp8.yaml", "LHCb 2015 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3016: ["HQ/ALICE19_iJPSI_pp.yaml", "ALICE 2019 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} J/\\psi$"],
+  3017: ["HQ/ATLAS18_pJPSI_pp.yaml", "ATLAS 2018 $\\ \\ - \\ \\ pp\\longrightarrow J/\\psi$"],
+  3018: ["HQ/ATLAS18_npJPSI_pp.yaml", "ATLAS 2018 $\\ \\ - \\ \\ pp\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3019: ["HQ/CMS17_npJPSI_pp.yaml", "CMS 2017 $\\ \\ - \\ \\ pp\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3020: ["HQ/CMS17_pJPSI_pp.yaml", "CMS 2017 $\\ \\ - \\ \\ pp\\longrightarrow J/\\psi^0$"],
+  3021: ["HQ/ALICE16_pD0_pp.yaml", "ALICE 2016 $\\ \\ - \\ \\ pp\\longrightarrow D^0$"],
+  3022: ["HQ/ALICE15_iJPSI_pp.yaml", "ALICE 2015 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} J/\\psi$"],
+  3023: ["HQ/ALICE17_iJPSI_pp5.yaml", "ALICE 2017 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} J/\\psi$"],
+  3024: ["HQ/ALICE17_iJPSI_pp13.yaml", "ALICE 2017 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} J/\\psi$"],
+  3025: ["HQ/ATLAS17_iY1S_pp.yaml", "ATLAS 2017 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3026: ["HQ/ATLAS17_pPSI2S_pp.yaml", "ATLAS 2017 $\\ \\ - \\ \\ pp\\longrightarrow \\psi(2S)$"],
+  3027: ["HQ/ATLAS17_npPSI2S_pp.yaml", "ATLAS 2017 $\\ \\ - \\ \\ pp\\longrightarrow B\\longrightarrow \\psi(2S)$"],
+  3028: ["HQ/ALICE15_iPSI2S_pp.yaml", "ALICE 2015 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} \\psi(2S)$"],
+  3029: ["HQ/CMS18_pPSI2S_pp.yaml", "CMS 2018 $\\ \\ - \\ \\ pp\\longrightarrow \\psi(2S)$"],
+  3030: ["HQ/ALICE17_iPSI2S_pp.yaml", "ALICE 2017 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} \\psi(2S)$"],
+  3031: ["HQ/ALICE15_iY1S_pp.yaml", "ALICE 2015 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3032: ["HQ/ALICE17_pD0_pp.yaml", "ALICE 2017 $\\ \\ - \\ \\ pp\\longrightarrow D^0$"],
+  3033: ["HQ/ALICE19_pD0_pp.yaml", "ALICE 2019 $\\ \\ - \\ \\ pp\\longrightarrow D^0$"],
+  3034: ["HQ/LHCb17_pD0_pp.yaml", "LHCb 2017 $\\ \\ - \\ \\ pp\\longrightarrow D^0$"],
+  3035: ["HQ/ALICE21_pD0_pp.yaml", "ALICE 2021 $\\ \\ - \\ \\ pp\\longrightarrow D^0$"],
+  3036: ["HQ/ALICE21_npJPSI_pp5.yaml", "ALICE 2021 $\\ \\ - \\ \\ pp\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3037: ["HQ/ALICE21_npJPSI_pp13.yaml", "ALICE 2021 $\\ \\ - \\ \\ pp\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3038: ["HQ/ALICE21_pJPSI_pp5.yaml", "ALICE 2021 $\\ \\ - \\ \\ pp\\longrightarrow J/\\psi$"],
+  3039: ["HQ/ALICE21_pJPSI_pp13.yaml", "ALICE 2021 $\\ \\ - \\ \\ pp\\longrightarrow J/\\psi$"],
+  3040: ["HQ/CMS22_iY1S_pp.yaml", "CMS 2022 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3041: ["HQ/LHCb18_iY1S_pp.yaml", "LHCb 201 $\\ \\ - \\ \\ pp \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3042: ["HQ/LHCb21_npJPSI_pp.yaml", "LHCb 2021 $\\ \\ - \\ \\ pp\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3043: ["HQ/LHCb21_pJPSI_pp.yaml", "LHCb 2021 $\\ \\ - \\ \\ pp\\longrightarrow J/\\psi$"],
+  3044: ["HQ/LHCb19_pPSI2S_pp7.yaml", "LHCb 2019 $\\ \\ - \\ \\ pp\\longrightarrow \\psi(2S)$"],
+  3045: ["HQ/LHCb19_npPSI2S_pp7.yaml", "LHCb 2019 $\\ \\ - \\ \\ pp\\longrightarrow B\\longrightarrow \\psi(2S)$"],
+  3046: ["HQ/LHCb19_pPSI2S_pp13.yaml", "LHCb 2019 $\\ \\ - \\ \\ pp\\longrightarrow \\psi(2S)$"],
+  3047: ["HQ/LHCb19_npPSI2S_pp13.yaml", "LHCb 2019 $\\ \\ - \\ \\ pp\\longrightarrow B\\longrightarrow \\psi(2S)$"],
+  3048: ["HQ/LHCb15_pD0_pp.yaml", "LHCb 2015 $\\ \\ - \\ \\ pp\\longrightarrow D^0$"],
+  ################ pPb###################### 
+  3101: ["HQ/ALICE14_pD0_pPb.yaml", "ALICE 2014 $\\ \\ - \\ \\ pPb\\longrightarrow D^0$"],
+  3102: ["HQ/LHCb17_pD0_pPb.yaml", "LHCb 2017 $\\ \\ - \\ \\ pPb\\longrightarrow D^0$"],
+  3103: ["HQ/ALICE14_iJPSI_pPb.yaml", "ALICE 2014 $\\ \\ - \\ \\ pPb \\overset{incl.}{\\longrightarrow} J/\\psi$"],
+  3104: ["HQ/ALICE15_iJPSI_pPb.yaml", "ALICE 2015 $\\ \\ - \\ \\ pPb \\overset{incl.}{\\longrightarrow} J/\\psi$"],
+  3105: ["HQ/LHCb17_pJPSI_pPb.yaml", "LHCb 2017 $\\ \\ - \\ \\ pPb\\longrightarrow J/\\psi$"],
+  3106: ["HQ/LHCb17_npJPSI_pPb.yaml", "LHCb 2017 $\\ \\ - \\ \\ pPb\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3107: ["HQ/LHCb14_npJPSI_pPb.yaml", "LHCb 2014 $\\ \\ - \\ \\ pPb\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3108: ["HQ/LHCb14_pJPSI_pPb.yaml", "LHCb 2014 $\\ \\ - \\ \\ pPb\\longrightarrow J/\\psi$"],
+  3109: ["HQ/ATLAS18_iY1S_pPb.yaml", "ATLAS 2018 $\\ \\ - \\ \\ pPb \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3110: ["HQ/ALICE15_iY1S_pPb.yaml", "ALICE 2015 $\\ \\ - \\ \\ pPb \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3111: ["HQ/LHCb14_iY1S_pPb.yaml", "LHCb 2014 $\\ \\ - \\ \\ pPb \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3112: ["HQ/ALICE18_iJPSI_pPb.yaml", "ALICE 2018 $\\ \\ - \\ \\ pPb \\overset{incl.}{\\longrightarrow} J/\\psi$"],
+  3113: ["HQ/LHCb18_iY1S_pPb.yaml", "LHCb 2018 $\\ \\ - \\ \\ pPb \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3114: ["HQ/ALICE19_iY1S_pPb.yaml", "ALICE 2019 $\\ \\ - \\ \\ pPb \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3115: ["HQ/CMS18_pPSI2S_pPb.yaml", "CMS 2018 $\\ \\ - \\ \\ pPb\\longrightarrow \\psi(2S)$"],
+  3116: ["HQ/ATLAS18_npJPSI_pPb.yaml", "ATLAS 2018 $\\ \\ - \\ \\ pPb\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3117: ["HQ/ATLAS18_pJPSI_pPb.yaml", "ATLAS 2018 $\\ \\ - \\ \\ pPb\\longrightarrow J/\\psi$"],
+  3118: ["HQ/ATLAS15_pJPSI_pPb.yaml", "ATLAS 2015 $\\ \\ - \\ \\ pPb\\longrightarrow J/\\psi$"],
+  3119: ["HQ/ATLAS15_npJPSI_pPb.yaml", "ATLAS 2015 $\\ \\ - \\ \\ pPb\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3120: ["HQ/CMS17_pJPSI_pPb.yaml", "CMS 2017 $\\ \\ - \\ \\ pPb\\longrightarrow J/\\psi$"],
+  3121: ["HQ/CMS17_npJPSI_pPb.yaml", "CMS 2017 $\\ \\ - \\ \\ pPb\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3122: ["HQ/ALICE19_pD0_pPb.yaml", "ALICE 2019 $\\ \\ - \\ \\ pPb\\longrightarrow D^0$"],
+  3123: ["HQ/ALICE16_pD0_pPb.yaml", "ALICE 2016 $\\ \\ - \\ \\ pPb\\longrightarrow D^0$"],
+  3124: ["HQ/ATLAS17_pPSI2S_pPb.yaml", "ATLAS 2017 $\\ \\ - \\ \\ pPb\\longrightarrow \\psi(2S)$"],
+  3125: ["HQ/ATLAS17_npPSI2S_pPb.yaml", "ATLAS 2017 $\\ \\ - \\ \\ pPb\\longrightarrow B\\longrightarrow \\psi(2S)$"],
+  3126: ["HQ/ALICE20_iPSI2S_pPb.yaml", "ALICE 2020 $\\ \\ - \\ \\ pPb \\overset{incl.}{\\longrightarrow} \\psi(2S)$"],
+  3127: ["HQ/ALICE14_iPSI2S_pPb.yaml", "ALICE 2014 $\\ \\ - \\ \\ pPb \\overset{incl.}{\\longrightarrow} \\psi(2S)$"],
+  3128: ["HQ/ALICE22_pJPSI_pPb.yaml", "ALICE 2022 $\\ \\ - \\ \\ pPb\\longrightarrow J/\\psi$"],
+  3129: ["HQ/ALICE22_npJPSI_pPb.yaml", "ALICE 2022 $\\ \\ - \\ \\ pPb\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3130: ["HQ/ALICE23_pJPSI_pPb.yaml", "ALICE 2023 $\\ \\ - \\ \\ pPb\\longrightarrow J/\\psi$"],
+  3131: ["HQ/ALICE23_npJPSI_pPb.yaml", "ALICE 2023 $\\ \\ - \\ \\ pPb\\longrightarrow B\\longrightarrow J/\\psi$"],
+  3132: ["HQ/CMS22_iY1S_pPb.yaml", "CMS 2022 $\\ \\ - \\ \\ pPb \\overset{incl.}{\\longrightarrow} \\Upsilon(1S)$"],
+  3133: ["HQ/LHCb23_pD0_pPb_fwd.yaml", "LHCb 2023 $\\ \\ - \\ \\ pPb \\longrightarrow \\D^0$"],
+  3134: ["HQ/LHCb23_pD0_pPb_bwd.yaml", "LHCb 2023 $\\ \\ - \\ \\ pPb \\longrightarrow \\D^0$"],
+  ################ NRQCD ###################### 
+  3201: ["HQ/NRQCD_LHCb.yaml", "NRQCD LHCb kinematics $\\ \\ - \\ \\ pp\\longrightarrow J/\\psi$"],
+  3202: ["HQ/NRQCD_ALICE.yaml", "NRQCD ALICE kinematics $\\ \\ - \\ \\ pp\\longrightarrow J/\\psi$"],
+  3203: ["HQ/NRQCD_ATLAS.yaml", "NRQCD ATLAS kinematics $\\ \\ - \\ \\ pp\\longrightarrow J/\\psi$"],
+  ################ R_PbPb #####################
+  3301: ["HQ/CMS18_pD0_RPbPb.yaml", "CMS 2018 $D^0$"],
+  3302: ["HQ/CMS18_pJPSI_RPbPb.yaml", "CMS 2018 JPSI"],
+  3303: ["HQ/CMS19_iY1S_RPbPb.yaml", "CMS 2019 inclusive Y1S"],
+
+  ############################################
+  ################# GAMMAPROD ################
+  ############################################
+
+  7001: ["GAMMAPROD/ATLAS10_etaBin1_pp.yaml", "ATLAS10_etaBin1_pp"],
+  7101: ["GAMMAPROD/ATLAS19_bin1_pPb.yaml", "ATLAS 2019 $\\ \\ - \\ \\ pPb\\longrightarrow \\gamma$"],
+  7102: ["GAMMAPROD/ATLAS19_bin2_pPb.yaml", "ATLAS 2019 $\\ \\ - \\ \\ pPb\\longrightarrow \\gamma$"],
+  7103: ["GAMMAPROD/ATLAS19_bin3_pPb.yaml", "ATLAS 2019 $\\ \\ - \\ \\ pPb\\longrightarrow \\gamma$"],
+  7201: ["GAMMAPROD/ATLAS19_bin1_RpPb.yaml", "ATLAS 2019 $\\ \\ - \\ \\ R_{pPb}$"],
+  7202: ["GAMMAPROD/ATLAS19_bin2_RpPb.yaml", "ATLAS 2019 $\\ \\ - \\ \\ R_{pPb}$"],
+  7203: ["GAMMAPROD/ATLAS19_bin3_RpPb.yaml", "ATLAS 2019 $\\ \\ - \\ \\ R_{pPb}$"],
+
+
+  ############################################
+  ################### Test ###################
+  ############################################
+
+  10003: ["SIH/HKNS_fake_Pi_200.yml", "Test_Pi0_200"],
+  10103: ["SIH/HKNS_fake_CPi_200.yml", "Test_CPi_200"],
+  10203: ["SIH/HKNS_fake_CK_200.yml", "Test_CK_200"],
+
+  30111: ["HQ/LHCb15_iY1S_pp7_2.yaml", "LHCb15_iY1S_pp7_2"],
+
+  50001: ["DIS/LTA_H_4.yaml", "LTA_H $Q^2=4$ GeV"],
+  50002: ["DIS/LTA_H_100.yaml", "LTA_H $Q^2=100$ GeV"],
+  50003: ["DIS/LTA_H_10000.yaml", "LTA_H $Q^2=10000$ GeV"],
+  50011: ["DIS/LTA_L_4.yaml", "LTA_L $Q^2=4$ GeV"],
+  50012: ["DIS/LTA_L_100.yaml", "LTA_L $Q^2=100$ GeV"],
+  50013: ["DIS/LTA_L_10000.yaml", "LTA_L $Q^2=10000$ GeV"],
+
+
+  ############################################
+  ################# Neutrinos ################
+  ############################################
+
+  5946: ["DISNEU/chorxsNu2_5946.yaml", "Chorus_sigma_nu"],
+  5947: ["DISNEU/chorxsNb2_5947.yaml", "Chorus_sigma_nubar"],
+  791:  ["DISDIMU/ccfrXmuNu3_791.yaml", "CCFR_dimuon_Nu"],
+  792:  ["DISDIMU/ccfrXmuNb3_792.yaml", "CCFR_dimuon_Nubar"],
+  793:  ["DISDIMU/nutvXmuNu3_793.yaml", "NuTeV_dimuon_Nu"],
+  794:  ["DISDIMU/nutvXmuNb3_794.yaml", "NuTeV_dimuon_Nubar"],
+
+}
+
+# if you want to add new datasets, add them as 
+# {ID}: [{Filepath within ncteqpp/data/}, {Display name}] 
+
