@@ -55,6 +55,13 @@ theory_yaml_to_py = {
     "RAPPLGRID": "rapplgrid"
 }
 
+theory_py_to_tex = {
+    "sigma": r"\sigma",
+    "ratio_sigma": r"\dfrac{\sigma^{A}}{\sigma^{\text{D}}}",
+    "F2": r"F_2",
+    "ratio_F2": r"\dfrac{F_2^{A}}{F_2^{\text{D}}}",
+}
+
 uncertainties_yaml_to_py = {
     "STAT": "unc_stat",
     "SYSU": "unc_sys",
