@@ -19,9 +19,25 @@ class Datasets(jaml.YAMLWrapper):
 
     _index: pd.DataFrame | None = None
 
-    _dataIDs: dict[str, dict[int, list[str]]] | None = (
-        None  # TODO: get rid of the dataIDs.yaml file
-    )
+    duplicate_fallback: list[Path]
+
+    def __init__(
+        self,
+        path: str | os.PathLike[str],
+        duplicate_fallback: (
+            str | os.PathLike[str] | Sequence[str | os.PathLike[str]]
+        ) = "NON-ISO",
+        cache_path: str | os.PathLike = "./.jaml_cache",
+        retain_yaml: bool = False,
+    ) -> None:
+        super().__init__(path, cache_path, retain_yaml)
+
+        # bring duplicate_fallback into list[Path] form. we need the second check because str is a Sequence
+        if not isinstance(duplicate_fallback, Sequence) or isinstance(
+            duplicate_fallback, str
+        ):
+            duplicate_fallback = [duplicate_fallback]
+        self.duplicate_fallback = [Path(p) for p in duplicate_fallback]
 
     @property
     def index(self) -> pd.DataFrame:
@@ -29,14 +45,6 @@ class Datasets(jaml.YAMLWrapper):
             self._load_dataset_index()
 
         return self._index  # type: ignore[return-value] # self._index is set in self.index_datasets())
-
-    @property
-    def dataIDs(self) -> dict[str, dict[int, list[str]]]:
-        if self._dataIDs is None:
-            with open(Path(__file__).parent / "dataIDs.yaml") as f:
-                self._dataIDs = yaml.safe_load(f)
-
-        return self._dataIDs
 
     def filtered_index(
         self,
@@ -57,22 +65,46 @@ class Datasets(jaml.YAMLWrapper):
 
         return res
 
-    def by_id(self, id_dataset: int) -> Dataset:
+    def by_id(
+        self,
+        id_dataset: int,
+        duplicate_fallback: (
+            str | os.PathLike[str] | Sequence[str | os.PathLike[str]] | None
+        ) = None,
+    ) -> Dataset:
         datasets = self.index.query("id_dataset == @id_dataset")
         match len(datasets):
             case 0:
                 raise ValueError(f"Dataset with ID {id} not found")
             case 1:
                 path = datasets.iloc[0]["path"]
-            case n if 2 <= n:
-                if (
-                    id_dataset in self.dataIDs["dataIDs"]
-                ):  # TODO: get rid of dataIDs.yaml
-                    path = self.path / Path(self.dataIDs["dataIDs"][id_dataset][0])
+            case n if n >= 2:
+                # use self.duplicate_fallback as default, or bring duplicate_fallback in list[Path] form
+                if duplicate_fallback is None:
+                    duplicate_fallback = self.duplicate_fallback
+                elif isinstance(duplicate_fallback, Sequence) and not isinstance(
+                    duplicate_fallback, str
+                ):  # we need the second check since str is a Sequence
+                    duplicate_fallback = [Path(p) for p in duplicate_fallback]
+                else:
+                    duplicate_fallback = [Path(duplicate_fallback)]
+
+                # to check if a duplicate_fallback is a subdirectory we need the absolute paths
+                duplicate_fallback = [(self.path / p if not p.is_absolute() else p) for p in duplicate_fallback]  # type: ignore[union-attr] # p is of type Path
+
+                # keep only the datasets that are in the paths in duplicate_fallback
+                datasets = datasets[
+                    datasets["path"].apply(
+                        lambda p: any(q in p.parents for q in duplicate_fallback)
+                    )
+                ]
+
+                if len(datasets) == 1:
+                    path = datasets.iloc[0]["path"]
                 else:
                     dataset_variants = "\n".join(map(str, datasets["path"]))
                     raise ValueError(
-                        f"Multiple dataset files with ID {id_dataset} found. Please load one of them by its path:\n{dataset_variants}"
+                        f"Multiple dataset files with ID {id_dataset} found. Please provide the duplicate_fallback argument or load one of the files by its path:\n{dataset_variants}"
                     )
 
         return Dataset(path)
@@ -181,6 +213,7 @@ class Dataset:
     _points: pd.DataFrame
     _yaml: jaml.YAMLType
 
+    _path: Path
     _id: int | None = None
     _type_experiment: str | None = None
     _kinematic_variables: list[str] | None = None
@@ -196,6 +229,7 @@ class Dataset:
 
     def __init__(self, path: str | os.PathLike) -> None:
         path = Path(path)
+        self._path = path
 
         with open(path, "r") as file:
             self._yaml = yaml.safe_load(file)
@@ -254,6 +288,10 @@ class Dataset:
     @property
     def yaml(self) -> jaml.YAMLType:
         return self._yaml
+
+    @property
+    def path(self) -> Path:
+        return self._path
 
     @property
     def id(self) -> int:
