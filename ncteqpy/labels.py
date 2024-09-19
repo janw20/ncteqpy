@@ -27,6 +27,24 @@ kinvars_yaml_to_py = {
     "XI_F": "xi_f"
 }
 
+kinvars_py_to_tex = {
+    "id_bin": r"\text{bin}",
+    "sqrt_s": r"\sqrt{s}",
+    "x": r"x",
+    "y": r"y",
+    "pT": r"p_{\text{T}}",
+    "pT_min": r"p_{\text{T}}",
+    "pT_max": r"p_{\text{T}}",
+    "y": r"y",
+    "y_min": r"y",
+    "y_max": r"y",
+    "eta": r"\eta",
+    "eta_min": r"\eta",
+    "eta_max": r"\eta",
+    "xi_r": r"\xi_{\text{r}}",
+    "xi_f": r"\xi_{\text{f}}",
+}
+
 theory_yaml_to_py = {
     "SIG": "sigma",
     "RSIG": "ratio_sigma",
