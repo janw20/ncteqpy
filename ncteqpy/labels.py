@@ -30,6 +30,7 @@ kinvars_yaml_to_py = {
 kinvars_py_to_tex = {
     "id_bin": r"\text{bin}",
     "sqrt_s": r"\sqrt{s}",
+    "Q2": r"Q^2",
     "x": r"x",
     "y": r"y",
     "pT": r"p_{\text{T}}",
