@@ -13,6 +13,8 @@ from matplotlib.legend import Legend
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
+import ncteqpy.labels as nc_labels
+
 
 class AvoidingLegend(Legend):
 
@@ -72,7 +74,6 @@ def plot(
             plot_DIS(
                 data=data,
                 theory=theory,
-                kinematic_variable=kinematic_variable,
                 ax=ax,
                 xlabel=xlabel,
                 ylabel=ylabel,
@@ -162,14 +163,17 @@ def plot_DIS(
         | None
     ) = "annotate above",
     chi2_label: bool = True,
-    curve_groupby: str | Sequence[str] = "Q2",
+    chi2_legend: bool = True,
+    curve_groupby: str | None = None,
     kwargs_data: dict[str, Any] | list[dict[str, Any] | None] = {},
     kwargs_theory: dict[str, Any] | list[dict[str, Any] | None] = {},
     kwargs_xlabel: dict[str, Any] = {},
     kwargs_ylabel: dict[str, Any] = {},
+    kwargs_title: dict[str, Any] = {},
+    kwargs_legend: dict[str, Any] = {},
     kwargs_annotate_chi2: dict[str, Any] = {},
     kwargs_annotate_curves: dict[str, Any] = {},
-    **kwargs: Any,
+    # **kwargs: Any,
 ) -> None:
     if ax is None:
         ax = plt.gca()
@@ -183,8 +187,16 @@ def plot_DIS(
         y_variable = "ratio_sigma"
 
     if data is not None:
-        for i, (Q2_i, data_i) in enumerate(data.groupby(curve_groupby, sort=True)):
-            data_i.sort_values(x_variable, inplace=True)
+        # enumerate groupby if curve_groupby is given, else just enumerate one tuple (i.e. no iteration)
+        iter_curves_data = (
+            enumerate(data.groupby(curve_groupby, sort=True))
+            if curve_groupby is not None
+            else enumerate([(0.0, data)])
+        )
+        for i, (_, data_i) in iter_curves_data:
+            data_i = data_i.sort_values(
+                x_variable
+            )  # no inplace=True here, results in SettingWithCopyWarning
 
             kwargs_default: dict[str, Any] = {
                 "capsize": 2,
@@ -217,9 +229,14 @@ def plot_DIS(
 
     if theory is not None:
         kwargs_index = 0
-        for i, (Q2_i, theo_i) in enumerate(
-            gb := theory.groupby(curve_groupby, sort=True)
-        ):
+        if curve_groupby is not None:
+            gb = theory.groupby(curve_groupby, sort=True)
+            iter_curves_theo = enumerate(gb)
+        else:
+            gb = None
+            iter_curves_theo = enumerate([(0.0, theory)])
+
+        for i, (cg_i, theo_i) in iter_curves_theo:
             theo_i.sort_values(x_variable, inplace=True)
 
             kwargs_default = {}
@@ -230,7 +247,8 @@ def plot_DIS(
                     | {
                         "color": (
                             "black"
-                            if len(gb) > 1 or curve_label is not None
+                            if gb is not None
+                            and (len(gb) > 1 or curve_label is not None)
                             else plt.rcParams["axes.prop_cycle"].by_key()["color"][
                                 0
                             ]  # we have to set the color manually so that the dummy call to ax.plot for the legend does not advance the prop cycle
@@ -246,17 +264,17 @@ def plot_DIS(
 
                 legend_handles.append(l[0])
 
-            label_curve = (
-                f"${Q2_i} = {xlabel.get('x_variable', 'x').replace('$', '') if isinstance(xlabel, dict) else 'x'}$"
-                # + (f" $(\\times 10^{{{i}}})$" if len(gb) > 1 else "")
-            )
+            if curve_groupby is not None:
+                label_curve = f"${xlabel[curve_groupby].replace('$', '') if isinstance(xlabel, dict) and curve_groupby in xlabel else nc_labels.kinvars_py_to_tex[curve_groupby]} = {cg_i}$"
 
-            if curve_label is not None and curve_label == "legend":
+            if (
+                curve_groupby is not None
+                and curve_label is not None
+                and curve_label == "legend"
+            ):
                 label = {"label": label_curve}
             else:
                 label = {}
-
-            print(label_curve)
 
             kwargs = _update_kwargs(kwargs_default | label, kwargs_theory, kwargs_index)
 
@@ -267,14 +285,18 @@ def plot_DIS(
             )
 
             matched_data_i = (
-                data.query(f"abs({curve_groupby} - @Q2_i) < 1e-6").sort_values(
-                    x_variable
+                (
+                    data.query(f"abs({curve_groupby} - @cg_i) < 1e-6").sort_values(
+                        x_variable
+                    )
+                    if data is not None
+                    else None
                 )
-                if data is not None
-                else None
+                if curve_groupby is not None
+                else data
             )
 
-            if curve_label is not None:
+            if curve_groupby is not None and curve_label is not None:
                 if curve_label == "legend":
                     legend_handles.append(l[0])
                 elif curve_label == "annotate above":
@@ -297,9 +319,10 @@ def plot_DIS(
                         "va": "center",
                     } | kwargs_annotate_curves
 
-                    if data_i is not None:
+                    if matched_data_i is not None:
                         pos = (
-                            theo_i["theory"].iloc[-1] + data_i[y_variable].iloc[-1]
+                            theo_i["theory"].iloc[-1]
+                            + matched_data_i[y_variable].iloc[-1]
                         ) / 2
                     else:
                         pos = theo_i["theory"].iloc[-1]
@@ -310,9 +333,10 @@ def plot_DIS(
                         **kwargs,
                     )
                 elif curve_label == "ticks":
-                    if data_i is not None:
+                    if matched_data_i is not None:
                         pos = (
-                            theo_i["theory"].iloc[-1] + data_i[y_variable].iloc[-1]
+                            theo_i["theory"].iloc[-1]
+                            + matched_data_i[y_variable].iloc[-1]
                         ) / 2
                     else:
                         pos = theo_i["theory"].iloc[-1]
@@ -321,16 +345,15 @@ def plot_DIS(
                     tick_labels.append(label_curve)
 
             if chi2_label and "chi2" in theo_i.columns:
-                if data_i is not None:
-                    pos = (
-                        np.maximum(
-                            theo_i["theory"].to_numpy(),
-                            (data_i[y_variable] + data_i["unc_tot"]).to_numpy(),
-                        )
-                        * 10**i
+                if matched_data_i is not None:
+                    pos = np.maximum(
+                        theo_i["theory"].to_numpy(),
+                        (
+                            matched_data_i[y_variable] + matched_data_i["unc_tot"]
+                        ).to_numpy(),
                     )
                 else:
-                    pos = theo_i["theory"] * 10**i
+                    pos = theo_i["theory"]
 
                 kwargs = {
                     "xytext": (0, 0.25),
@@ -338,12 +361,14 @@ def plot_DIS(
                     "ha": "center",
                 } | kwargs_annotate_chi2
 
-                for chi2_i, pos_i, pT_i in zip(theo_i["chi2"], pos, data_i[x_variable]):
+                for chi2_i, pos_i, pT_i in zip(
+                    theo_i["chi2"], pos, matched_data_i[x_variable]
+                ):
                     ax.annotate(f"{chi2_i:.1f}", (pT_i, pos_i), **kwargs)
 
             kwargs_index += 1
 
-        if curve_label == "colorbar":
+        if curve_groupby is not None and gb is not None and curve_label == "colorbar":
             colors = [p["color"] for p in plt.rcParams["axes.prop_cycle"]]
             cmap = m_colors.LinearSegmentedColormap.from_list(
                 "cmap", colors, N=len(colors)
@@ -372,36 +397,22 @@ def plot_DIS(
                 else:
                     c.set_label("y")
 
-    if xlabel is not None:
-        if isinstance(xlabel, str):
-            if xlabel == "fallback":
-                ax.set_xlabel(x_variable, **kwargs_xlabel)
-            else:
-                ax.set_xlabel(xlabel, **kwargs_xlabel)
-        elif isinstance(xlabel, dict):
-            ax.set_xlabel(xlabel[x_variable], **kwargs_xlabel)
-        else:
-            raise ValueError(f"xlabel must be str or dict but given was {type(xlabel)}")
-
-    if ylabel is not None:
-        if isinstance(ylabel, str):
-            if ylabel == "fallback":
-                ax.set_ylabel(
-                    "",
-                    **kwargs_ylabel,
-                )
-            else:
-                ax.set_ylabel(ylabel, **kwargs_ylabel)
-        else:
-            raise ValueError(f"ylabel must be str or dict but given was {type(ylabel)}")
-
-    if title is not None:
-        ax.set_title(title, fontsize="medium")  # TODO: kwargs for the title
+    _set_labels(
+        ax=ax,
+        x_variable=x_variable,
+        xlabel=xlabel,
+        kwargs_xlabel=kwargs_xlabel,
+        y_variable=y_variable,
+        ylabel=ylabel,
+        kwargs_ylabel=kwargs_ylabel,
+        title=title,
+        kwargs_title=kwargs_title,
+    )
 
     ax.set_yscale("log")
     ax.grid()
 
-    if legend or bin_label is not None and bin_label == "legend":
+    if legend or curve_label is not None and curve_label == "legend":
         leg = ax.legend(handles=legend_handles, **kwargs_legend)
 
     plt.draw()
@@ -425,7 +436,7 @@ def plot_DIS(
         ax.add_artist(leg2)
 
     # for some reason the ticks don't work if we set them at an earlier stage
-    if bin_label == "ticks" and ticks and tick_labels:
+    if curve_label == "ticks" and ticks and tick_labels:
         ax2 = ax.twinx()
         ax2.set_yticks(ticks=ticks, labels=tick_labels)
         ax2.set_ybound(*ax.get_ybound())
@@ -465,6 +476,7 @@ def plot_HQ(
         str, Any
     ] = {},  # TODO: better kwargs for the bin_label options # TODO define overloads for the different bin_label possibilites and the respective kwargs
     kwargs_label_colorbar: dict[str, Any] = {},
+    **kwargs,
 ) -> None:
     if ax is None:
         ax = plt.gca()
@@ -730,3 +742,42 @@ def plot_HQ(
         ax2.set_ybound(*ax.get_ybound())
         ax2.set_yscale(ax.get_yscale())
         ax2.set_yticks(ticks=ticks, labels=tick_labels)
+
+
+def _set_labels(
+    ax: plt.Axes,
+    x_variable: str,
+    y_variable: str,
+    xlabel: Literal["fallback"] | str | None = "fallback",
+    ylabel: Literal["fallback"] | str | None = "fallback",
+    title: str | None = None,
+    kwargs_xlabel: dict[str, Any] = {},
+    kwargs_ylabel: dict[str, Any] = {},
+    kwargs_title: dict[str, Any] = {},
+) -> None:
+    if xlabel is not None:
+        if isinstance(xlabel, str):
+            if xlabel == "fallback":
+                ax.set_xlabel(
+                    f"${nc_labels.kinvars_py_to_tex[x_variable]}$", **kwargs_xlabel
+                )
+            else:
+                ax.set_xlabel(xlabel, **kwargs_xlabel)
+        else:
+            raise ValueError(f"xlabel must be str or dict but given was {type(xlabel)}")
+
+    if ylabel is not None:
+        if isinstance(ylabel, str):
+            if ylabel == "fallback":
+                ax.set_ylabel(
+                    f"${nc_labels.theory_py_to_tex[y_variable]}$",
+                    **kwargs_ylabel,
+                )
+            else:
+                ax.set_ylabel(ylabel, **kwargs_ylabel)
+        else:
+            raise ValueError(f"ylabel must be str or dict but given was {type(ylabel)}")
+
+    if title is not None:
+        kwargs_title = _update_kwargs({"fontsize": "medium"}, kwargs_title)
+        ax.set_title(title, **kwargs_title)
