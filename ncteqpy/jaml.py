@@ -256,7 +256,7 @@ class YAMLWrapper:
 
     def _load_yaml(
         self, pattern: Pattern | None
-    ) -> YAMLType | list[YAMLType]:
+    ) -> YAMLType | list[tuple[pathlib.Path, YAMLType]]:
         """Loads the YAML file(s) pointed to by `path`. If a `pattern` is given, the YAML file is loaded with `jaml.safe_load`, otherwise PyYAMLs `safe_load` function is used
 
         Parameters
@@ -266,8 +266,8 @@ class YAMLWrapper:
 
         Returns
         -------
-        list[tuple[pathlib.Path, YAMLType]]
-            The loaded YAML data if self.path points to a YAML file, or a list of tuples containing the path to the YAMl file and the loaded YAML data if self.path points to a directory
+        YAMLType | list[tuple[pathlib.Path, YAMLType]]
+            The loaded YAML data if `self.path` points to a YAML file or a directory that contains just one file, or a list of tuples containing the path to the YAMl file and the loaded YAML data if `self.path` points to a directory
 
         Raises
         ------
