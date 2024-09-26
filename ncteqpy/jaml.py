@@ -7,7 +7,7 @@ import os
 import pathlib
 import pickle
 import sys
-from typing import IO, Any, Iterable, Iterator, TypeAlias, TypeVar, cast
+from typing import IO, Any, Iterable, Iterator, Sequence, TypeAlias, TypeVar, cast
 
 import pandas as pd
 import yaml
@@ -209,21 +209,21 @@ class Pattern:
 
 class YAMLWrapper:
 
-    path: pathlib.Path
-    """Path to the wrapped YAML file or to the directory containing the wrapped YAML files"""
+    paths: list[pathlib.Path]
+    """Path to the wrapped YAML file(s) or to the directory containing the wrapped YAML files"""
     cache_path: pathlib.Path
     """Path to the pickle cache directory"""
     retain_yaml: bool
     """True if the raw YAML data should be stored in `yaml` after loading, otherwise False"""
 
-    _mtime: float
+    _mtimes: list[float]
     """Timestamp of the time the wrapped YAML file(s) pointed to by `path` was/were modified. Used for determining if the wrapped YAML file(s) changed"""
     _yaml: YAMLType = None
     """Wrapped raw YAML, only different from `None` if `retain_yaml` is True"""
 
     def __init__(
         self,
-        path: str | os.PathLike,
+        paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
         cache_path: str | os.PathLike = pathlib.Path("./.jaml_cache/"),
         retain_yaml: bool = False,
     ) -> None:
@@ -231,16 +231,20 @@ class YAMLWrapper:
 
         Parameters
         ----------
-        path : str | os.PathLike
-            Path to YAML file or a directory (possibly recursively) containing YAML files
+        path : str | os.PathLike[str] | Sequence[str | os.PathLike[str]]
+            Path to YAML file(s) or a directory (possibly recursively) containing YAML files
         retain_yaml : bool, optional
             True if the raw YAML data should be stored in `yaml` after loading, otherwise False. By default False
         """
-        self.path = pathlib.Path(path)
-        self.path.resolve(strict=True)  # raise if path doesn't exist
-        self._mtime = self._path_mtime()
+        if isinstance(paths, (str, os.PathLike)):
+            self.paths = [pathlib.Path(paths)]
+        else:
+            self.paths = [pathlib.Path(p) for p in paths]
+
+        for p in self.paths:
+            p.resolve(strict=True)  # raise if path doesn't exist
+        self._mtimes = self._path_mtimes()
         self.cache_path = pathlib.Path(cache_path)
-        self.path.resolve(strict=True)
         self.retain_yaml = retain_yaml
         if retain_yaml:
             self._yaml = {}
@@ -252,7 +256,7 @@ class YAMLWrapper:
 
     def _load_yaml(
         self, pattern: Pattern | None
-    ) -> YAMLType | list[tuple[pathlib.Path, YAMLType]]:
+    ) -> YAMLType | list[YAMLType]:
         """Loads the YAML file(s) pointed to by `path`. If a `pattern` is given, the YAML file is loaded with `jaml.safe_load`, otherwise PyYAMLs `safe_load` function is used
 
         Parameters
@@ -262,7 +266,7 @@ class YAMLWrapper:
 
         Returns
         -------
-        YAMLType
+        list[tuple[pathlib.Path, YAMLType]]
             The loaded YAML data if self.path points to a YAML file, or a list of tuples containing the path to the YAMl file and the loaded YAML data if self.path points to a directory
 
         Raises
@@ -291,28 +295,39 @@ class YAMLWrapper:
                     else:
                         return cast(YAMLType, safe_load(f, pattern.pattern))
 
-        if self.path.is_dir():
-            res = []
-            for p in self.path.glob("**/*.yaml"):
-                try:
-                    res.append((p, load_yaml_file(p, pattern)))
-                except yaml.scanner.ScannerError:
-                    pass
-            return res
-        elif self.path.is_file():
-            return load_yaml_file(self.path, pattern)
-        else:
-            raise ValueError("self.path must be a file or directory")
+        res: list[tuple[pathlib.Path, YAMLType]] = []
+        for path in self.paths:
+            if path.is_dir():
+                for p in path.glob("**/*.yaml"):
+                    try:
+                        res.append((p, load_yaml_file(p, pattern)))
+                    except yaml.scanner.ScannerError:
+                        pass
+            elif path.is_file():
+                res.append((path, load_yaml_file(path, pattern)))
+            else:
+                raise ValueError("All paths in self.paths must be a file or directory")
+        
+        return res[0][1] if len(res) == 1 else res
 
-    def _path_mtime(self) -> float:
-        if self.path.is_file():
-            return self.path.stat().st_mtime
-        elif self.path.is_dir():
-            return functools.reduce(
-                lambda t, p: max(t, p.stat().st_mtime), self.path.glob("**/*.yaml"), 0.0
-            )
-        else:
-            raise ValueError("self.path must be a file or directory")
+    def _path_mtimes(self) -> list[float]:
+        res = []
+
+        for path in self.paths:
+            if path.is_file():
+                res.append(path.stat().st_mtime)
+            elif path.is_dir():
+                res.append(
+                    functools.reduce(
+                        lambda t, p: max(t, p.stat().st_mtime),
+                        path.glob("**/*.yaml"),
+                        0.0,
+                    )
+                )
+            else:
+                raise ValueError("All paths in self.paths must be a file or directory")
+
+        return res
 
     def _pickle_path(self, name: str) -> pathlib.Path:
         """Path to the cached pickle file
@@ -331,7 +346,7 @@ class YAMLWrapper:
         # Python version in the pickle path to support different versions and hash of the path to support caching different files simultaneously (resolve first so relative and absolute paths give the same hash)
         return pathlib.Path(
             self.cache_path
-            / f"{sys.version_info.major}.{sys.version_info.minor}/{hashlib.sha256(str(self.path.resolve()).encode(), usedforsecurity=False).hexdigest()}/{name}.pkl"
+            / f"{sys.version_info.major}.{sys.version_info.minor}/{hashlib.sha256(str(self.paths).encode(), usedforsecurity=False).hexdigest()}/{name}.pkl"
         )
 
     def _pickle(self, variable: object, name: str) -> None:
@@ -369,7 +384,7 @@ class YAMLWrapper:
         """
         return (
             self._pickle_path(name).is_file()
-            and self._pickle_path(name).stat().st_mtime > self._path_mtime()
+            and self._pickle_path(name).stat().st_mtime > min(self._path_mtimes())
         )
 
     def _unpickle(self, name: str) -> object | None:
@@ -401,9 +416,9 @@ class YAMLWrapper:
         bool
             True if the wrapped YAML file was modified, False otherwise
         """
-        prev_mtime = self._mtime
-        self._mtime = self._path_mtime()
-        return prev_mtime < self._mtime
+        prev_mtime = self._mtimes
+        self._mtimes = self._path_mtimes()
+        return prev_mtime < self._mtimes
 
 
 class PatternComposer(Composer):
