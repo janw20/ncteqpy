@@ -53,7 +53,7 @@ class Settings(nc_jaml.YAMLWrapper):
         """
         if len(key) != 2:
             raise ValueError("Key must have length 2")
-        nc_jaml.nested_set(self._yaml_overwrites, key, value)
+        nc_jaml.nested_set(self.yaml_overwrites, key, value)
 
     # FIXME: handle multiline fields
     # TODO: add commenting functionality
@@ -155,14 +155,14 @@ class Settings(nc_jaml.YAMLWrapper):
                 current_tags.append(tag)
 
             if len(current_tags) == 2 and nc_jaml.nested_in(
-                self._yaml_overwrites, current_tags
+                self.yaml_overwrites, current_tags
             ):
                 # print([current_cols, current_tags])
                 val = line.removeprefix(leading_whitespace + tag + ":")
                 # print(val)
                 # print(val.strip())
                 new_val = str(
-                    nc_jaml.nested_get(self._yaml_overwrites, current_tags)
+                    nc_jaml.nested_get(self.yaml_overwrites, current_tags)
                 ).replace("'", '"')
                 if new_val in ("True", "False"):
                     new_val = new_val.lower()
