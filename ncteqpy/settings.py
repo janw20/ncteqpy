@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import ncteqpy.jaml as nc_jaml
+from ncteqpy.jaml import YAMLType
 
 _SETTINGS_FILE_HEADER = (
     "# !! File is writable by ncteqpy (changing this line will make it non-writable) !!"
@@ -13,7 +14,9 @@ _SETTINGS_FILE_HEADER = (
 
 class Settings(nc_jaml.YAMLWrapper):
     _datasets: list[Path] | None = None
-    _yaml_overwrites: dict[str, dict[str, Any]] = {}
+
+    yaml_overwrites: dict[str, dict[str, YAMLType]] = {}
+    """YAML fields that will be overwritten when calling `Settings.write`. Values can also be added by calling `Settings.add_yaml_overwrite`."""
 
     def __init__(
         self,
@@ -38,14 +41,14 @@ class Settings(nc_jaml.YAMLWrapper):
 
         super().__init__(path, cache_path, retain_yaml)
 
-    def add_overwrite(self, key: list[str], value: nc_jaml.YAMLType) -> None:
-        """Add a YAML value that is overwritten when `Settings.write` is called.
+    def add_yaml_overwrite(self, key: list[str], value: YAMLType) -> None:
+        """Add a YAML value to `yaml_overwrites`, which will overwrite the previous one when `Settings.write` is called.
 
         Parameters
         ----------
         keys : list[str]
             Key to the value that will be overwritten. Must be of length 2
-        value : nc_jaml.YAMLType
+        value : YAMLType
             New value
         """
         if len(key) != 2:
@@ -55,7 +58,7 @@ class Settings(nc_jaml.YAMLWrapper):
     # FIXME: handle multiline fields
     # TODO: add commenting functionality
     def write(self, path: str | os.PathLike[str] | None = None) -> None:
-        """Write out a new version of the settings file containing overwritten values set by `Settings.add_overwrite`. This preserves whitespace and comments.
+        """Write out a new version of the settings file containing overwritten values contained in `Settings.yaml_overwrites`. This preserves whitespace and comments.
 
         Parameters
         ----------
