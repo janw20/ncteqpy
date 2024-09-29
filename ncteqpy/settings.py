@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import cast
+from string import whitespace
+from typing import Iterable, Sequence, cast
 
 import ncteqpy.jaml as nc_jaml
 from ncteqpy.jaml import YAMLType
@@ -18,9 +19,15 @@ class Settings(nc_jaml.YAMLWrapper):
     yaml_overwrites: dict[str, dict[str, YAMLType]] = {}
     """YAML fields that will be overwritten when calling `Settings.write`. Values can also be added by calling `Settings.add_yaml_overwrite`."""
 
+    yaml_comments: set[int] = set()
+    """Lines that will be commented out when calling `Setings.write` (or uncommented if they are already commented out). The line numbers refer to the YAML file at `Settings.path`. Values can also be added by calling `Settings.yaml_add_comment`.
+    """
+
     def __init__(
         self,
         path: str | os.PathLike[str],
+        yaml_overwrites: dict[str, dict[str, YAMLType]] = {},
+        yaml_comments: set[int] = set(),
         cache_path: str | os.PathLike[str] = Path("./.jaml_cache/"),
         retain_yaml: bool = False,
     ) -> None:
@@ -30,10 +37,14 @@ class Settings(nc_jaml.YAMLWrapper):
         ----------
         path : str | os.PathLike[str]
             Path to the YAML settings file
+        yaml_overwrites : dict[str, dict[str, YAMLType]]
+            YAML fields that will be overwritten when calling `Settings.write`
+        yaml_comments : set[int]
+            Lines that will be commented out when calling `Setings.write` (or uncommented if they are already commented out)
         cache_path : str | os.PathLike[str]
-            Path to the directory where cached variables should be stored. By default ./.jaml_cache
+            Path to the directory where cached variables should be stored. By default "./.jaml_cache"
         retain_yaml : bool, optional
-            True if the raw YAML data should be stored in `yaml` after loading, otherwise False. By default False
+            True if the raw YAML data should be stored in `Settings.yaml` after loading, otherwise False. By default False
         """
         path = Path(path)
         if not path.is_file():
@@ -41,8 +52,11 @@ class Settings(nc_jaml.YAMLWrapper):
 
         super().__init__(path, cache_path, retain_yaml)
 
+        self.yaml_overwrites = yaml_overwrites
+        self.yaml_comments = yaml_comments
+
     def add_yaml_overwrite(self, key: list[str], value: YAMLType) -> None:
-        """Add a YAML value to `yaml_overwrites`, which will overwrite the previous one when `Settings.write` is called.
+        """Add a YAML value to `Settings.yaml_overwrites`, which will overwrite the previous one when `Settings.write` is called.
 
         Parameters
         ----------
@@ -55,15 +69,28 @@ class Settings(nc_jaml.YAMLWrapper):
             raise ValueError("Key must have length 2")
         nc_jaml.nested_set(self.yaml_overwrites, key, value)
 
+    def add_yaml_comments(self, lines: int | Iterable[int]) -> None:
+        """Add line numbers to `Settings.yaml_comments`, which will be either commented or uncommented when `Settings.write` is called.
+
+        Parameters
+        ----------
+        lines : int | Iterable[int]
+            Line number(s) that will be commented or uncommented.
+        """
+        if not isinstance(lines, Iterable):
+            lines = [lines]
+
+        self.yaml_comments.update(lines)
+
     # FIXME: handle multiline fields
     # TODO: add commenting functionality
     def write(self, path: str | os.PathLike[str] | None = None) -> None:
-        """Write out a new version of the settings file containing overwritten values contained in `Settings.yaml_overwrites`. This preserves whitespace and comments.
+        """Write out a new version of the settings file, first toggling commentation of the lines in `Settings.yaml_comments` and then overwriting values contained in `Settings.yaml_overwrites`. This preserves whitespace and comments.
 
         Parameters
         ----------
         path : str | os.PathLike[str] | None, optional
-            The path where to write the settings file, by default None. If this is None, the original settings file given by `self.path` is overwritten. Note that an existing file can only be overwritten if the first line is given by
+            The path where to write the settings file, by default None. If this is None, the original settings file given by `Settings.path` is overwritten. Note that an existing file can only be overwritten if the first line is given by
 
             `# !! File is writable by ncteqpy (changing this line will make it non-writable) !!`
 
@@ -105,8 +132,25 @@ class Settings(nc_jaml.YAMLWrapper):
         for i, line in enumerate(lines):
             # if skip_to_next and line.startswith("".join(current_cols)):
 
+            lineno = i - offset_lineno
+
             if not line or line.isspace():
                 continue
+
+            if lineno in self.yaml_comments:
+                line_lstrip = line.lstrip()
+                whitespace = line[: -len(line_lstrip)]
+                if line_lstrip:
+                    if line_lstrip.startswith("# "):
+                        line_lstrip = line_lstrip[2:]
+                    elif line_lstrip.startswith("#"):
+                        line_lstrip = line_lstrip[1:]
+                    else:
+                        line_lstrip = "# " + line_lstrip
+
+                    # we set `line` in case it is modified below and `lines[i]` in case of a continue below
+                    line = whitespace + line_lstrip
+                    lines[i] = line
 
             # first take care of comments, since colons in them don't identify tags
             p = line.rpartition("#")
@@ -133,7 +177,7 @@ class Settings(nc_jaml.YAMLWrapper):
             if p[2]:
                 if not p[2][0].isspace():
                     raise SyntaxError(
-                        f"Only colon in line {i - offset_lineno} is part of string, are you missing a space?"
+                        f"Only colon in line {lineno} is part of string, are you missing a space?"
                     )
 
             tag = p[0].lstrip()
@@ -157,15 +201,9 @@ class Settings(nc_jaml.YAMLWrapper):
             if len(current_tags) == 2 and nc_jaml.nested_in(
                 self.yaml_overwrites, current_tags
             ):
-                # print([current_cols, current_tags])
                 val = line.removeprefix(leading_whitespace + tag + ":")
-                # print(val)
-                # print(val.strip())
-                new_val = str(
-                    nc_jaml.nested_get(self.yaml_overwrites, current_tags)
-                ).replace("'", '"')
-                if new_val in ("True", "False"):
-                    new_val = new_val.lower()
+                
+                new_val = nc_jaml.to_str(nc_jaml.nested_get(self.yaml_overwrites, current_tags))
                 new_val = val.replace(val.strip(), new_val)
                 lines[i] = leading_whitespace + tag + ":" + new_val + comment
 
