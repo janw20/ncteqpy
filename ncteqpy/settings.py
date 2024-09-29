@@ -101,38 +101,26 @@ class Settings(nc_jaml.YAMLWrapper):
         SyntaxError
             If the settings file at `self.path` cannot be read.
         """
-        if path is None:
-            assert len(self.paths) == 1
-            path = self.paths[0]
-        else:
-            path = Path(path)
 
+        # paths is only initialized with one file in __init__
+        assert len(self.paths) == 1
+
+        # if path is None, we try to overwrite self.paths[0] if it includes _SETTINGS_FILE_HEADER
+        path = self.paths[0] if path is None else Path(path)
+
+        lines = self.paths[0].read_text().splitlines()
+        
         offset_lineno = 0
-
-        if path.exists():
-            lines = path.read_text().splitlines()
-
-            if not lines[0] == _SETTINGS_FILE_HEADER:
-                raise PermissionError(
-                    f"File at {path} is not writable by ncteqpy. If you intend write to it anyway, add the following as the first line of the file:\n{_SETTINGS_FILE_HEADER}"
-                )
-        else:
-            # paths is only initialized with one file in __init__
-            assert len(self.paths) == 1
-
-            lines = self.paths[0].read_text().splitlines()
-
-            if not lines[0] == _SETTINGS_FILE_HEADER:
-                lines.insert(0, _SETTINGS_FILE_HEADER)
-                offset_lineno = 1
+        if not lines[0] == _SETTINGS_FILE_HEADER:
+            lines.insert(0, _SETTINGS_FILE_HEADER)
+            offset_lineno = 1
 
         current_tags: list[str] = []
         current_cols: list[str] = []
         i_level = 0
         for i, line in enumerate(lines):
-            # if skip_to_next and line.startswith("".join(current_cols)):
-
-            lineno = i - offset_lineno
+            # offset by offset_lineno (to correct adding the header as the first line) and by 1 since line numbers start at 1
+            lineno = i - offset_lineno + 1
 
             if not line or line.isspace():
                 continue
