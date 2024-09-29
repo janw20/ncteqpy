@@ -1,5 +1,7 @@
 .jaml_cache
 test.ipynb
+.stfolder
+.stversions
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
