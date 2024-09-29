@@ -148,6 +148,17 @@ def nested_items(d: YAMLType) -> Iterator[tuple[tuple[str | int, ...], YAMLLeaf]
     return helper(d, [])
 
 
+def to_str(y: YAMLType) -> str:
+    if isinstance(y, str):
+        res = f'"{y}"'
+    elif isinstance(y, bool):
+        res = str(y).lower()
+    else:
+        res = str(y)
+
+    return res
+
+
 class Pattern:
     _pattern: YAMLType
 
@@ -307,7 +318,7 @@ class YAMLWrapper:
                 res.append((path, load_yaml_file(path, pattern)))
             else:
                 raise ValueError("All paths in self.paths must be a file or directory")
-        
+
         return res[0][1] if len(res) == 1 else res
 
     def _path_mtimes(self) -> list[float]:
@@ -382,10 +393,9 @@ class YAMLWrapper:
         bool
             True if a valid pickle file exists, False otherwise
         """
-        return (
-            self._pickle_path(name).is_file()
-            and self._pickle_path(name).stat().st_mtime > min(self._path_mtimes())
-        )
+        return self._pickle_path(name).is_file() and self._pickle_path(
+            name
+        ).stat().st_mtime > min(self._path_mtimes())
 
     def _unpickle(self, name: str) -> object | None:
         """Unpickle a variable stored in the cache directory
