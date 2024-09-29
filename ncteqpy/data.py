@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from genericpath import isdir
 import os
 from pathlib import Path
 from typing import Literal, Sequence, cast
@@ -12,6 +13,7 @@ import yaml.parser
 
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
+from ncteqpy.settings import Settings
 
 
 # TODO: make possible to load only subdirs or list of paths
@@ -23,13 +25,25 @@ class Datasets(jaml.YAMLWrapper):
 
     def __init__(
         self,
-        path: str | os.PathLike[str],
+        path: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
+        settings: Settings | None = None,
         duplicate_fallback: (
             str | os.PathLike[str] | Sequence[str | os.PathLike[str]]
         ) = "NON-ISO",
         cache_path: str | os.PathLike = "./.jaml_cache",
         retain_yaml: bool = False,
     ) -> None:
+        if settings is not None:
+            if isinstance(path, Sequence) and not isinstance(path, str):
+                raise ValueError("If you pass `settings`, please pass only one path to the directory where the data is saved")
+            else:
+                path = Path(path)
+
+                if not path.is_dir():
+                    raise ValueError("If you pass `settings`, please pass the path to the directory where the data is saved")
+
+                path = [path / p for p in settings.datasets]
+
         super().__init__(path, cache_path, retain_yaml)
 
         # bring duplicate_fallback into list[Path] form. we need the second check because str is a Sequence
@@ -90,12 +104,17 @@ class Datasets(jaml.YAMLWrapper):
                     duplicate_fallback = [Path(duplicate_fallback)]
 
                 # to check if a duplicate_fallback is a subdirectory we need the absolute paths
-                duplicate_fallback = [(self.path / p if not p.is_absolute() else p) for p in duplicate_fallback]  # type: ignore[union-attr] # p is of type Path
+                duplicate_fallback_abs = []
+                for f in duplicate_fallback:
+                    print(f)
+                    duplicate_fallback_abs.extend((p / f for p in self.paths) if not f.is_absolute() else [f])  # type: ignore[union-attr] # p is of type Path
+
+                print(duplicate_fallback_abs)
 
                 # keep only the datasets that are in the paths in duplicate_fallback
                 datasets = datasets[
                     datasets["path"].apply(
-                        lambda p: any(q in p.parents for q in duplicate_fallback)
+                        lambda p: any(q in p.parents for q in duplicate_fallback_abs)
                     )
                 ]
 
