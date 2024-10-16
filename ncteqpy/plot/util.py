@@ -27,7 +27,9 @@ class AdditionalLegend(Legend):
         bbox = Bbox.from_bounds(0, 0, width, height)
 
         # get all legends added before this one
-        legends = [l for l in self.axes.get_children() if isinstance(l, Legend)] # TODO: make this work with figure
+        legends = [
+            l for l in self.axes.get_children() if isinstance(l, Legend)
+        ]  # TODO: make this work with figure
         index_self = legends.index(self)
         legends = legends[:index_self]
 

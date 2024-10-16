@@ -179,7 +179,9 @@ class AxesGrid:
                 if self.ax[i + 1, j] is not None:
                     ax_ij.set_xlabel("")
                     if j != 0:
-                        cast(Axes, self.ax[i + 1, j]).tick_params("x", which="both", labelbottom=True)
+                        cast(Axes, self.ax[i + 1, j]).tick_params(
+                            "x", which="both", labelbottom=True
+                        )
 
             # for the axes not in the first column we delete the ylabel
             if j != 0:
