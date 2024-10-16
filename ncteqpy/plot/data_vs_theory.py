@@ -14,6 +14,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
 import ncteqpy.labels as nc_labels
+import ncteqpy.plot.util as p_util
 
 
 class AvoidingLegend(Legend):
@@ -162,6 +163,7 @@ def plot_DIS(
         ]
         | None
     ) = "annotate above",
+    subplot_label: Literal["legend"] | None = "legend",
     chi2_label: bool = True,
     chi2_legend: bool = True,
     curve_groupby: str | None = None,
@@ -173,7 +175,7 @@ def plot_DIS(
     kwargs_legend: dict[str, Any] = {},
     kwargs_annotate_chi2: dict[str, Any] = {},
     kwargs_annotate_curves: dict[str, Any] = {},
-    # **kwargs: Any,
+    kwargs_set: dict[str, Any] = {},
 ) -> None:
     if ax is None:
         ax = plt.gca()
@@ -359,6 +361,7 @@ def plot_DIS(
                     "xytext": (0, 0.25),
                     "textcoords": "offset fontsize",
                     "ha": "center",
+                    "fontsize": "xx-small",
                 } | kwargs_annotate_chi2
 
                 for chi2_i, pos_i, pT_i in zip(
@@ -409,17 +412,23 @@ def plot_DIS(
         kwargs_title=kwargs_title,
     )
 
-    ax.set_yscale("log")
+    if y_variable not in ("ratio_sigma", "ratio_F2"): 
+        ax.set_yscale("log")
+    
+    ax.set_xscale("log")
     ax.grid()
 
     if legend or curve_label is not None and curve_label == "legend":
-        leg = ax.legend(handles=legend_handles, **kwargs_legend)
+        kwargs_legend = {"loc": "lower right"} | kwargs_legend
+        leg = ax.figure.legend(handles=legend_handles, **kwargs_legend)
+
+    ax.set(**kwargs_set)
 
     plt.draw()
 
     if chi2_legend and theory is not None and "chi2" in theory.columns:
-        bbox = leg.get_window_extent()
-        leg2 = AvoidingLegend(
+        # bbox = leg.get_window_extent()
+        leg2 = p_util.AdditionalLegend(
             ax,
             handles=[Patch(), Patch(), Patch()],
             labels=[
@@ -427,11 +436,11 @@ def plot_DIS(
                 f"$\\chi^2_{{\\text{{total}}}} = {theory['chi2'].sum():.3f}$",
                 f"$\\chi^2_{{\\text{{total}}}}\\,/\\, N_{{\\text{{points}}}} = {theory['chi2'].sum() / len(theory):.3f}$",
             ],
-            avoid=[bbox],
             labelspacing=0,
             handlelength=0,
             handleheight=0,
             handletextpad=0,
+            fontsize="small",
         )
         ax.add_artist(leg2)
 
@@ -476,11 +485,8 @@ def plot_HQ(
         str, Any
     ] = {},  # TODO: better kwargs for the bin_label options # TODO define overloads for the different bin_label possibilites and the respective kwargs
     kwargs_label_colorbar: dict[str, Any] = {},
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
-    if ax is None:
-        ax = plt.gca()
-
     legend_handles = []
 
     if data is not None:
@@ -615,7 +621,7 @@ def plot_HQ(
                         **kwargs,
                     )
                 elif bin_label == "ticks":
-                    if data_y is not None:
+                    if data_y is not None and not len(data_y) == 0:
                         pos = (
                             (theo_y["theory"].iloc[-1] + data_y["sigma"].iloc[-1])
                             / 2
