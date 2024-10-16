@@ -1,21 +1,22 @@
 from __future__ import annotations
 
-from math import ceil
 import os
-from typing import Any, Iterable, Sequence, cast
+from typing import Any, Literal, Sequence, cast
 
-import matplotlib.pyplot as plt
-from matplotlib.figure import Figure
-from matplotlib.axes import Axes
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from matplotlib.patches import Patch
 
 import ncteqpy.data as data
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
-import ncteqpy.plots.data_vs_theory as data_vs_theory
 import ncteqpy.util as util
+from ncteqpy.plot import data_vs_theory
+from ncteqpy.plot import util as p_util
+from ncteqpy.plot.grid import AxesGrid
 
 
 # TODO: implement pickling for the other members
@@ -304,11 +305,21 @@ class Chi2(jaml.YAMLWrapper):
         id_snapshot: int = 0,
         ax: Axes | Sequence[Axes] | None = None,
         subplot_groupby: str | None = None,
+        subplot_label: Literal["legend"] | None = "legend",
         curve_groupby: str | None = None,
         pdf_path: str | os.PathLike | None = None,
         kwargs_subplots: dict[str, Any] = {},
         **kwargs: Any,
-    ) -> tuple[Figure, Axes] | list[tuple[Figure, Axes]]:
+    ) -> tuple[Figure, Axes] | list[tuple[Figure, Axes | npt.NDArray[Axes | None]]]:
+        if pdf_path is not None:
+            raise NotImplementedError("Saving as pdf not implemented yet")
+
+        if ax is not None:
+            raise NotImplementedError("Passing your own Axes not implemented yet")
+
+        # bring id_dataset in Sequence[int] form (either directly from id_dataset or indirectly from collecting all IDs belonging to type_experiment)
+        # the points variable holds all snapshot points belonging to the relevant dataset IDs
+        # ValueErrors are thrown if id_dataset and type_experiment are not consistent
         if id_dataset is None:
             if type_experiment is None:
                 raise ValueError(
@@ -352,81 +363,49 @@ class Chi2(jaml.YAMLWrapper):
         # gb = self.snapshots_breakdown_points.loc[id_snapshot].sort_values(["type_experiment", "id_dataset"]).groupby(["type_experiment", "id_dataset"])
 
         # group the relevant dataset IDs so we get one dataset per figure
-        fig_gb = points.query("id_dataset in @id_dataset").groupby("id_dataset", sort=True)
+        fig_gb = points.query("id_dataset in @id_dataset").groupby(
+            "id_dataset", sort=True
+        )
 
         if ax is None:
             kwargs_subplots = {"layout": "tight"} | kwargs_subplots
 
-            fig_ax: list[tuple[Figure, Axes | npt.NDArray[Axes]]] # type: ignore[type-var] # otherwise Axes is not possible as a parameter of npt.NDArray
-
             if subplot_groupby is None:
-                fig_ax = [plt.subplots(**kwargs_subplots) for _ in id_dataset]
+                ax_grid = [AxesGrid(1, **kwargs_subplots) for _ in id_dataset]
             else:
-                fig_ax = []
+                ax_grid = []
                 for _, data_i in fig_gb:
-                    kwargs_naxes = {}
+                    # group for different axes in one figure
                     data_i_gb = data_i.groupby(subplot_groupby)
+                    ax_grid.append(AxesGrid(n_real=len(data_i_gb), **kwargs_subplots))
 
-                    # if both nrows and ncols are given, we just have to check if the number of subplots is compatible with the values grouped by subplot_groupby
-                    if "nrows" in kwargs_subplots and "ncols" in kwargs_subplots:
-                        if kwargs_subplots["nrows"] * kwargs_subplots["ncols"] < len(data_i_gb):
-                            raise ValueError(f"kwargs_subplots['nrows'] * kwargs_subplots['ncols'] must be greater than or equal {len(data_i_gb)}, the unique values of subplot_groupby")
-                    # if only nrows is given, we determine ncols automatically
-                    elif "nrows" in kwargs_subplots:
-                        kwargs_naxes["nrows"] = kwargs_subplots["nrows"]
-                        kwargs_naxes["ncols"] = ceil(len(data_i_gb) / kwargs_naxes["nrows"])
-                    # same for ncols
-                    elif "ncols" in kwargs_subplots:
-                        kwargs_naxes["ncols"] = kwargs_subplots["ncols"]
-                        kwargs_naxes["nrows"] = ceil(len(data_i_gb) / kwargs_naxes["ncols"])
-                    # if none of them are given, we try to make the figure as square as possible. ncols is always rounded down since usually the width of a subplot should be larger than the height
-                    else:
-                        kwargs_naxes["ncols"] = int(np.sqrt(len(data_i_gb)))
-                        kwargs_naxes["nrows"] = ceil(len(data_i_gb) / kwargs_naxes["ncols"])
-                        print(len(data_i_gb), kwargs_naxes)
-
-
-                    # how many axes we have to remove in the end
-                    surplus_axes = kwargs_naxes["nrows"] * kwargs_naxes["ncols"] - len(data_i_gb)
-
-                    fig_data_i, ax_data_i = cast(tuple[Figure, npt.NDArray[Axes]], plt.subplots(**(kwargs_subplots | kwargs_naxes))) # type: ignore[type-var] # otherwise Axes is not possible as a parameter of npt.NDArray
-                    
-                    # remove the superfluous axes in the last row
-                    if surplus_axes > 0:
-                        for ax in cast(Iterable[Axes], ax_data_i[-1, -surplus_axes:]):
-                            ax.remove()
-                    
-                        # ax_data_i = ax_data_i[:-surplus_axes]
-
-                    fig_ax.append((fig_data_i, ax_data_i))
-    
         else:
             if isinstance(ax, Sequence):
                 fig_ax = [(ax_i.figure, ax_i) for ax_i in ax]
             else:
                 fig_ax = [(ax.figure, ax)]
-        
-        # print(points.query("id_dataset in @id_dataset"))
 
         found_dataset = False
-        for (fig_i, axes_i), (id_dataset_i, data_i) in zip(
-            fig_ax, fig_gb
-        ):
+        for grid_i, (id_dataset_i, data_i) in zip(ax_grid, fig_gb):
             try:
                 dataset = data.by_id(id_dataset_i)
                 found_dataset = True
             except:
                 dataset = None
 
-            # print(dataset.points)
-
-            ax_gb = data_i.groupby(subplot_groupby)
-            for ax_i, (_, data_ij) in zip(axes_i.flatten(), ax_gb):
-                # print(data_ij)
+            ax_iter = zip(
+                grid_i.ax_real.flatten(),
+                (
+                    data_i.groupby(subplot_groupby)
+                    if subplot_groupby is not None
+                    else [(np.nan, data_i)]
+                ),
+            )
+            for ax_i, (ax_gb_val_i, data_ij) in ax_iter:
 
                 # plot only the same bins: match on the kinematic variables
                 if dataset is not None:
-                    
+
                     match_indices = []
                     for row_data in dataset.points.itertuples():
                         for row_theory in data_ij.itertuples():
@@ -449,7 +428,8 @@ class Chi2(jaml.YAMLWrapper):
                     ):
                         kwargs_i["xlabel"] = {
                             kin_var: util.format_unit(
-                                label, dataset.plotting_units_kinematic_variables[kin_var]
+                                f"${label}$",
+                                dataset.plotting_units_kinematic_variables[kin_var],
                             )
                             for kin_var, label in dataset.plotting_labels_kinematic_variables.items()
                         }
@@ -460,13 +440,11 @@ class Chi2(jaml.YAMLWrapper):
                         kwargs_i["ylabel"] = util.format_unit(
                             dataset.plotting_label_theory, dataset.plotting_unit_theory
                         )
-                    kwargs_i["title"] = (
-                        f"{(dataset.plotting_short_info + ',  ') if dataset.plotting_short_info is not None else ''}{(dataset.plotting_process + ',  ') if dataset.plotting_process is not None else ''}Dataset ID: {dataset.id}"
-                    )
 
                     kwargs_i = kwargs_i | kwargs
                 else:
                     data_matched = data_ij
+                    kwargs_i = {}
 
                 assert len(data_ij) == len(data_matched)
 
@@ -479,12 +457,58 @@ class Chi2(jaml.YAMLWrapper):
                     **kwargs_i,
                 )
 
+                if subplot_groupby is not None and subplot_label == "legend":
+                    label = "$"
+                    if (
+                        dataset is not None
+                        and dataset.plotting_labels_kinematic_variables is not None
+                    ):
+                        label += dataset.plotting_labels_kinematic_variables[
+                            subplot_groupby
+                        ]
+                    else:
+                        label += labels.kinvars_py_to_tex[subplot_groupby]
+
+                    label += f" = {ax_gb_val_i}"
+
+                    if (
+                        dataset is not None
+                        and dataset.plotting_units_kinematic_variables is not None
+                    ):
+                        label += dataset.plotting_units_kinematic_variables[
+                            subplot_groupby
+                        ]
+
+                    label += "$"
+
+                    subplot_legend = p_util.AdditionalLegend(
+                        ax_i,
+                        handles=[Patch()],
+                        labels=[label],
+                        labelspacing=0,
+                        handlelength=0,
+                        handleheight=0,
+                        handletextpad=0,
+                        fontsize="small",
+                    )
+                    ax_i.add_artist(subplot_legend)
+
+            grid_i.prune_labels()
+
+            if dataset is not None:
+                grid_i.fig.suptitle(
+                    f"{(dataset.plotting_short_info + ',  ') if dataset.plotting_short_info is not None else ''}{(dataset.plotting_process + ',  ') if dataset.plotting_process is not None else ''}Dataset ID: {dataset.id}",
+                    fontsize="medium",
+                )
+
+            grid_i.tight_layout()
+
         if not found_dataset:
             raise ValueError(
                 "No datasets found for the given values of id_dataset and type_experiment"
             )
 
-        return fig_ax
+        return [(g.fig, g.ax) for g in ax_grid]
 
     def plot_data_vs_theory_grouped(self) -> None:
         pass
