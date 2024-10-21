@@ -11,6 +11,7 @@ import pandas as pd
 import yaml
 import yaml.parser
 
+from ncteqpy.cuts import Cut
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
 from ncteqpy.settings import Settings
@@ -235,8 +236,14 @@ class Dataset:
     _path: Path
     _id: int | None = None
     _type_experiment: str | None = None
+    _A1: int | None = None
+    _Z1: int | None = None
+    _A2: int | None = None
+    _Z2: int | None = None
     _kinematic_variables: list[str] | None = None
     # TODO add rest of fields
+
+    _cut: Cut | None = None
 
     _plotting_short_info: str | None = None
     _plotting_reference_id: str | None = None
@@ -246,12 +253,14 @@ class Dataset:
     _plotting_label_theory: str | None = None
     _plotting_unit_theory: str | None = None
 
-    def __init__(self, path: str | os.PathLike) -> None:
+    def __init__(self, path: str | os.PathLike, cut: Cut | None = None) -> None:
         path = Path(path)
         self._path = path
 
         with open(path, "r") as file:
             self._yaml = yaml.safe_load(file)
+
+        self.cut = cut
 
         cols = (
             labels.kinvars_yaml_to_py
@@ -273,6 +282,8 @@ class Dataset:
                 )
             ),
         )
+        if self.cut is not None:
+            self._points = self._points[self.cut.accepts(self._points)]
 
         if "pT_min" in self.points.columns and "pT_max" in self.points.columns:
             i = self.points.columns.get_loc("pT_max")
@@ -329,6 +340,34 @@ class Dataset:
             )
 
         return self._type_experiment
+    
+    @property
+    def A1(self) -> int | None:
+        if self._A1 is None:
+            self._A1 = cast(int, jaml.nested_get(self.yaml, ["Description", "AZValues1", 0]))
+
+        return self._A1
+    
+    @property
+    def A2(self) -> int | None:
+        if self._A2 is None:
+            self._A2 = cast(int, jaml.nested_get(self.yaml, ["Description", "AZValues2", 0]))
+
+        return self._A2
+
+    @property
+    def Z1(self) -> int | None:
+        if self._Z1 is None:
+            self._Z1 = cast(int, jaml.nested_get(self.yaml, ["Description", "AZValues1", 1]))
+
+        return self._Z1
+    
+    @property
+    def Z2(self) -> int | None:
+        if self._Z2 is None:
+            self._Z2 = cast(int, jaml.nested_get(self.yaml, ["Description", "AZValues2", 1]))
+
+        return self._Z2
 
     @property
     def kinematic_variables(self) -> list[str]:
@@ -437,6 +476,14 @@ class Dataset:
             )
 
         return self._plotting_unit_theory
+    
+    def apply(self, cuts: Cut | Sequence[Cut]) -> None:
+        if isinstance(cuts, Cut):
+            cuts = [cuts]
+        
+        for cut in cuts:
+            self._points = self._points[cut.accepts(self._points)]
+
 
     def plot(
         self,
