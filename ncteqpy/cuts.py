@@ -260,7 +260,7 @@ class Cut_GreaterThanEqual(Cut_RelOp):
 
 
 @dataclass(frozen=True)
-class Cut_Equal(Cut_BinLogOp):
+class Cut_Equal(Cut_RelOp):
 
     def __str__(self) -> str:
         return f"{self.variable} == {self.value}"
