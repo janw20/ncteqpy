@@ -172,6 +172,15 @@ class Cut_LessThan(Cut_RelOp):
 
     def __str__(self) -> str:
         return f"{self.variable} < {self.value}"
+    
+    @overload
+    def accepts(self, value: float | dict[str, float]) -> bool: ...
+    
+    @overload
+    def accepts(self, value: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]: ...
+
+    @overload
+    def accepts(self, value: pd.Series | pd.DataFrame) -> pd.Series[bool]: ...
 
     @override
     def accepts(
@@ -195,6 +204,15 @@ class Cut_LessThanEqual(Cut_RelOp):
 
     def __str__(self) -> str:
         return f"{self.variable} <= {self.value}"
+    
+    @overload
+    def accepts(self, value: float | dict[str, float]) -> bool: ...
+    
+    @overload
+    def accepts(self, value: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]: ...
+
+    @overload
+    def accepts(self, value: pd.Series | pd.DataFrame) -> pd.Series[bool]: ...
 
     @override
     def accepts(
@@ -218,6 +236,15 @@ class Cut_GreaterThan(Cut_RelOp):
 
     def __str__(self) -> str:
         return f"{self.variable} > {self.value}"
+    
+    @overload
+    def accepts(self, value: float | dict[str, float]) -> bool: ...
+    
+    @overload
+    def accepts(self, value: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]: ...
+
+    @overload
+    def accepts(self, value: pd.Series | pd.DataFrame) -> pd.Series[bool]: ...
 
     @override
     def accepts(
@@ -241,6 +268,15 @@ class Cut_GreaterThanEqual(Cut_RelOp):
 
     def __str__(self) -> str:
         return f"{self.variable} >= {self.value}"
+    
+    @overload
+    def accepts(self, value: float | dict[str, float]) -> bool: ...
+    
+    @overload
+    def accepts(self, value: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]: ...
+
+    @overload
+    def accepts(self, value: pd.Series | pd.DataFrame) -> pd.Series[bool]: ...
 
     @override
     def accepts(
@@ -264,6 +300,15 @@ class Cut_Equal(Cut_RelOp):
 
     def __str__(self) -> str:
         return f"{self.variable} == {self.value}"
+    
+    @overload
+    def accepts(self, value: float | dict[str, float]) -> bool: ...
+    
+    @overload
+    def accepts(self, value: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]: ...
+
+    @overload
+    def accepts(self, value: pd.Series | pd.DataFrame) -> pd.Series[bool]: ...
 
     @override
     def accepts(
@@ -283,10 +328,19 @@ class Cut_Equal(Cut_RelOp):
 
 
 @dataclass(frozen=True)
-class Cut_NotEqual(Cut_BinLogOp):
+class Cut_NotEqual(Cut_RelOp):
 
     def __str__(self) -> str:
         return f"{self.variable} != {self.value}"
+    
+    @overload
+    def accepts(self, value: float | dict[str, float]) -> bool: ...
+    
+    @overload
+    def accepts(self, value: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]: ...
+
+    @overload
+    def accepts(self, value: pd.Series | pd.DataFrame) -> pd.Series[bool]: ...
 
     @override
     def accepts(
@@ -310,6 +364,15 @@ class Cut_And(Cut_BinLogOp):
 
     def __str__(self) -> str:
         return f"({self.cut1}) & ({self.cut2})"
+    
+    @overload
+    def accepts(self, value: float | dict[str, float]) -> bool: ...
+    
+    @overload
+    def accepts(self, value: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]: ...
+
+    @overload
+    def accepts(self, value: pd.Series | pd.DataFrame) -> pd.Series[bool]: ...
 
     @override
     def accepts(
@@ -326,6 +389,15 @@ class Cut_Or(Cut_BinLogOp):
 
     def __str__(self) -> str:
         return f"({self.cut1}) | ({self.cut2})"
+    
+    @overload
+    def accepts(self, value: float | dict[str, float]) -> bool: ...
+    
+    @overload
+    def accepts(self, value: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]: ...
+
+    @overload
+    def accepts(self, value: pd.Series | pd.DataFrame) -> pd.Series[bool]: ...
 
     @override
     def accepts(
@@ -349,6 +421,15 @@ class Cut_Xor(Cut_BinLogOp):
 
     def __str__(self) -> str:
         return f"({self.cut1}) ^ ({self.cut2})"
+    
+    @overload
+    def accepts(self, value: float | dict[str, float]) -> bool: ...
+    
+    @overload
+    def accepts(self, value: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]: ...
+
+    @overload
+    def accepts(self, value: pd.Series | pd.DataFrame) -> pd.Series[bool]: ...
 
     @override
     def accepts(
@@ -362,6 +443,15 @@ class Cut_Not(Cut_UnLogOp):
 
     def __str__(self) -> str:
         return f"~({self.cut})"
+    
+    @overload
+    def accepts(self, value: float | dict[str, float]) -> bool: ...
+    
+    @overload
+    def accepts(self, value: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]: ...
+
+    @overload
+    def accepts(self, value: pd.Series | pd.DataFrame) -> pd.Series[bool]: ...
 
     @override
     def accepts(
