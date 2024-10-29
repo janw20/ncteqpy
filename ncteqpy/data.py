@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from genericpath import isdir
 import os
 from pathlib import Path
 from typing import Literal, Sequence, cast
@@ -11,9 +10,9 @@ import pandas as pd
 import yaml
 import yaml.parser
 
-from ncteqpy.cuts import Cut
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
+from ncteqpy.cuts import Cut
 from ncteqpy.settings import Settings
 
 
@@ -36,12 +35,16 @@ class Datasets(jaml.YAMLWrapper):
     ) -> None:
         if settings is not None:
             if isinstance(path, Sequence) and not isinstance(path, str):
-                raise ValueError("If you pass `settings`, please pass only one path to the directory where the data is saved")
+                raise ValueError(
+                    "If you pass `settings`, please pass only one path to the directory where the data is saved"
+                )
             else:
                 path = Path(path)
 
                 if not path.is_dir():
-                    raise ValueError("If you pass `settings`, please pass the path to the directory where the data is saved")
+                    raise ValueError(
+                        "If you pass `settings`, please pass the path to the directory where the data is saved"
+                    )
 
                 path = [path / p for p in settings.datasets]
 
@@ -311,6 +314,13 @@ class Dataset:
             errs = list(set(self.points.columns) & set(["unc_stat", "unc_sys"]))
             self._points["unc_tot"] = np.sqrt(np.sum(self.points[errs] ** 2, axis=1))
 
+    def __repr__(self):
+        return (
+            f"Dataset(path='{self.path}')"
+            if self.cut is None
+            else f"Dataset(path='{self.path}', cut={self.cut})"
+        )
+
     @property
     def points(self) -> pd.DataFrame:
         return self._points
@@ -340,32 +350,40 @@ class Dataset:
             )
 
         return self._type_experiment
-    
+
     @property
     def A1(self) -> int | None:
         if self._A1 is None:
-            self._A1 = cast(int, jaml.nested_get(self.yaml, ["Description", "AZValues1", 0]))
+            self._A1 = cast(
+                int, jaml.nested_get(self.yaml, ["Description", "AZValues1", 0])
+            )
 
         return self._A1
-    
+
     @property
     def A2(self) -> int | None:
         if self._A2 is None:
-            self._A2 = cast(int, jaml.nested_get(self.yaml, ["Description", "AZValues2", 0]))
+            self._A2 = cast(
+                int, jaml.nested_get(self.yaml, ["Description", "AZValues2", 0])
+            )
 
         return self._A2
 
     @property
     def Z1(self) -> int | None:
         if self._Z1 is None:
-            self._Z1 = cast(int, jaml.nested_get(self.yaml, ["Description", "AZValues1", 1]))
+            self._Z1 = cast(
+                int, jaml.nested_get(self.yaml, ["Description", "AZValues1", 1])
+            )
 
         return self._Z1
-    
+
     @property
     def Z2(self) -> int | None:
         if self._Z2 is None:
-            self._Z2 = cast(int, jaml.nested_get(self.yaml, ["Description", "AZValues2", 1]))
+            self._Z2 = cast(
+                int, jaml.nested_get(self.yaml, ["Description", "AZValues2", 1])
+            )
 
         return self._Z2
 
@@ -476,14 +494,13 @@ class Dataset:
             )
 
         return self._plotting_unit_theory
-    
+
     def apply(self, cuts: Cut | Sequence[Cut]) -> None:
         if isinstance(cuts, Cut):
             cuts = [cuts]
-        
+
         for cut in cuts:
             self._points = self._points[cut.accepts(self._points)]
-
 
     def plot(
         self,
