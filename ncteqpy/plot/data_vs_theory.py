@@ -106,6 +106,23 @@ def plot(
                 **kwargs,
             )
 
+        case "WZPROD":
+            plot_WZPROD(
+                data=data,
+                theory=theory,
+                kinematic_variable=kinematic_variable,
+                ax=ax,
+                xlabel=xlabel,
+                ylabel=ylabel,
+                title=title,
+                legend=legend,
+                chi2_label=chi2_label,
+                kwargs_data=kwargs_data,
+                kwargs_theory=kwargs_theory,
+                kwargs_xlabel=kwargs_xlabel,
+                kwargs_ylabel=kwargs_ylabel,
+                **kwargs,
+            )
 
 def plot_basic(
     x: str | Sequence[str],  # sequence for binned variables
@@ -749,6 +766,256 @@ def plot_HQ(
         ax2.set_yscale(ax.get_yscale())
         ax2.set_yticks(ticks=ticks, labels=tick_labels)
 
+def plot_WZPROD(
+    data: pd.DataFrame | None = None,
+    theory: pd.DataFrame | None = None,
+    kinematic_variable: str | None = None,
+    ax: plt.Axes | None = None,
+    xlabel: Literal["fallback"] | str | dict[str, str] | None = "fallback",
+    ylabel: Literal["fallback"] | str | None = "fallback",
+    title: str | None = None,
+    legend: bool = True,
+    chi2_label: bool = True,
+    chi2_legend: bool = True,
+    bin_label: (
+        Literal[
+            "annotate above",
+            "annotate right",
+            "ticks",
+            "colorbar",
+            "legend",
+        ]
+        | None
+    ) = "annotate above",
+    kwargs_data: dict[str, Any] | list[dict[str, Any] | None] = {},
+    kwargs_theory: dict[str, Any] | list[dict[str, Any] | None] = {},
+    kwargs_xlabel: dict[str, Any] = {},
+    kwargs_ylabel: dict[str, Any] = {},
+    kwargs_legend: dict[str, Any] = {},
+    kwargs_annotate_bins: dict[str, Any] = {},
+    kwargs_annotate_chi2: dict[str, Any] = {},
+    kwargs_annotate_colorbar: dict[
+        str, Any
+    ] = {},  # TODO: better kwargs for the bin_label options # TODO define overloads for the different bin_label possibilites and the respective kwargs
+    kwargs_label_colorbar: dict[str, Any] = {},
+    **kwargs: Any,
+) -> None:
+    legend_handles = []
+
+    if data is not None:
+
+            kwargs_default: dict[str, Any] = {
+                "xerr": (data["eta_max"] - data["eta_min"]) / 2,
+                "capsize": 2,
+                "marker": ".",
+                "markersize": 6,
+                "ls": "",
+                "color": "black",
+            }
+ # TODO: if kwargs_data is dict, the label should only be set once
+            if "unc_tot" in data.columns:
+                kwargs_default["yerr"] = data["unc_tot"]
+
+            if legend :
+                kwargs_default["label"] = "Data"
+
+            kwargs = _update_kwargs(
+                kwargs_default, kwargs_data
+            )  # TODO: if kwargs_data is dict, the label should only be set once
+
+            if data["eta_min"].any() != [0] or data["eta_max"].any() !=0:
+                e = ax.errorbar(
+                    (data["eta_min"] + data["eta_max"]) / 2,
+                    data["applgrid"] ,
+                    **kwargs,
+                )
+            else:
+                e = ax.errorbar(
+                    data["eta"],
+                    data["applgrid"] ,
+                    **kwargs,
+                )                
+
+            if legend :
+                legend_handles.append(e)
+
+
+    ticks = []
+    tick_labels = []
+
+    if theory is not None:
+            theory.sort_values(["eta_min", "eta_max"], inplace=True)
+            kwargs_default = {}
+
+            if legend:
+                kwargs = _update_kwargs(
+                    kwargs_default
+                    | {
+                        "color": (
+                            "black"
+                            if len(theory) > 1 or bin_label is not None
+                            else plt.rcParams["axes.prop_cycle"].by_key()["color"][
+                                0
+                            ]  # we have to set the color manually so that the dummy call to ax.plot for the legend does not advance the prop cycle
+                        ),
+                        "label": "Theory",
+                    },
+                    kwargs_theory,
+                )
+
+                l = ax.plot([], [], **kwargs)
+
+                legend_handles.append(l[0])
+
+            label_rapidity = ("")
+
+            if bin_label is not None and bin_label == "legend":
+                label = {"label": label_rapidity}
+            else:
+                label = {}
+
+            kwargs = _update_kwargs(kwargs_default | label, kwargs_theory)
+
+            if data["eta_min"].any() != 0 or data["eta_max"].any() !=0:
+                l = ax.plot(
+                    np.append(theory["eta_min"].iloc[0], theory["eta_max"]),
+                    np.append(theory["theory"], theory["theory"].iloc[-1]),
+                    drawstyle="steps-post",
+                    **kwargs,
+                )
+            else:
+                l = ax.plot(
+                    theory["eta"],
+                    theory["theory"],
+                    marker="x",
+                    **kwargs,
+                )
+                
+            if bin_label is not None:
+                if bin_label == "legend":
+                    legend_handles.append(l[0])
+                elif bin_label == "annotate above":
+                    kwargs = {
+                        "xytext": (0, 0.3),
+                        "textcoords": "offset fontsize",
+                        "ha": "right",
+                    } | kwargs_annotate_bins
+
+                    ax.annotate(
+                        label_rapidity,
+                        (theory["eta_max"].iloc[-1], theory["theory"].iloc[-1]),
+                        **kwargs,
+                    )
+                elif bin_label == "annotate right":
+                    kwargs = {
+                        "xytext": (0.3, 0),
+                        "textcoords": "offset fontsize",
+                        "ha": "left",
+                        "va": "center",
+                    } | kwargs_annotate_bins
+
+                    if data is not None:
+                        pos = (
+                            (theory["theory"].iloc[-1] + data["applgrid"].iloc[-1])
+                            / 2
+                            
+                        )
+                    else:
+                        pos = theory["theory"].iloc[-1]
+
+
+
+            if chi2_label and "chi2" in theory.columns:
+                if data is not None:
+                    pos = (
+                        np.maximum(
+                            theory["theory"].to_numpy(),
+                            (data["applgrid"] + data["unc_tot"]).to_numpy(),
+                        )
+                       
+                    )
+                else:
+                    pos = theory["theory"]
+
+                kwargs = {
+                    "xytext": (0, 0.25),
+                    "textcoords": "offset fontsize",
+                    "ha": "center",
+                } | kwargs_annotate_chi2
+
+                if data["eta_min"].any() != [0] or data["eta_max"].any() !=0:
+
+                    for chi2_i, pos_i, eta_i in zip(
+                        theory["chi2"], pos, (data["eta_min"] + data["eta_max"]) / 2
+                    ):
+                        ax.annotate(f"{chi2_i:.1f}", (eta_i, pos_i), **kwargs)
+
+                else:
+
+                    for chi2_i, pos_i, eta_i in zip(
+                        theory["chi2"], pos, data["eta"]
+                    ):
+                        ax.annotate(f"{chi2_i:.1f}", (eta_i, pos_i), **kwargs)
+
+    if xlabel is not None:
+        if isinstance(xlabel, str):
+            if xlabel == "fallback":
+                ax.set_xlabel("ETA", **kwargs_xlabel)
+            else:
+                ax.set_xlabel(xlabel, **kwargs_xlabel)
+        elif isinstance(xlabel, dict):
+            ax.set_xlabel(xlabel["eta_min"], **kwargs_xlabel)
+        else:
+            raise ValueError(f"xlabel must be str or dict but given was {type(xlabel)}")
+
+    if ylabel is not None:
+        if isinstance(ylabel, str):
+            if ylabel == "fallback":
+                ax.set_ylabel(
+                    "$\\dfrac{\\mathrm{d} \\sigma}{\\mathrm{d}y_{\\rm CMS}}$",
+                    **kwargs_ylabel,
+                )
+            else:
+                ax.set_ylabel(ylabel, **kwargs_ylabel)
+        else:
+            raise ValueError(f"ylabel must be str or dict but given was {type(ylabel)}")
+
+    if title is not None:
+        ax.set_title(title, fontsize="medium")  # TODO: kwargs for the title
+
+    #ax.set_yscale("log")
+    ax.grid()
+
+    if legend or bin_label is not None and bin_label == "legend":
+        leg = ax.legend(handles=legend_handles, **kwargs_legend)
+
+    plt.draw()
+
+    if chi2_legend and theory is not None and "chi2" in theory.columns:
+        bbox = leg.get_window_extent()
+        leg2 = AvoidingLegend(
+            ax,
+            handles=[Patch(), Patch(), Patch()],
+            labels=[
+                f"$N_{{\\text{{points}}}} = {len(theory)}$",
+                f"$\\chi^2_{{\\text{{total}}}} = {theory['chi2'].sum():.3f}$",
+                f"$\\chi^2_{{\\text{{total}}}}\\,/\\, N_{{\\text{{points}}}} = {theory['chi2'].sum() / len(theory):.3f}$",
+            ],
+            avoid=[bbox],
+            labelspacing=0,
+            handlelength=0,
+            handleheight=0,
+            handletextpad=0,
+        )
+        ax.add_artist(leg2)
+
+    # for some reason the ticks don't work if we set them at an earlier stage
+    if bin_label == "ticks" and ticks and tick_labels:
+        ax2 = ax.twinx()
+        ax2.set_yticks(ticks=ticks, labels=tick_labels)
+        ax2.set_ybound(*ax.get_ybound())
+        ax2.set_yscale(ax.get_yscale())
+        ax2.set_yticks(ticks=ticks, labels=tick_labels)
 
 def _set_labels(
     ax: plt.Axes,
