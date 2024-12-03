@@ -162,6 +162,7 @@ class Datasets(jaml.YAMLWrapper):
                         "TypeTheory": None,
                         "TypeUncertainties": None,
                         "TypeKinVar": None,
+                        "Dim": None,
                         # "Grid": None,
                     },
                 }
@@ -218,6 +219,7 @@ class Datasets(jaml.YAMLWrapper):
                         "types_uncertainties": jaml.nested_get(
                             data, ["GridSpec", "TypeUncertainties"]
                         ),
+                        "num_points": jaml.nested_get(data, ["GridSpec", "Dim", 0]),
                         # "grid": np.array(jaml.nested_get(data, ["GridSpec", "Grid"])),
                     }
                 )
