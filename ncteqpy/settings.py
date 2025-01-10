@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
-from string import whitespace
-from typing import Iterable, Sequence, cast
+from typing import Iterable, cast
 
 import ncteqpy.jaml as nc_jaml
 from ncteqpy.jaml import YAMLType
@@ -15,6 +15,9 @@ _SETTINGS_FILE_HEADER = (
 
 class Settings(nc_jaml.YAMLWrapper):
     _datasets: list[Path] | None = None
+    _all_parameters: list[str] | None = None
+    _open_parameters: list[str] | None = None
+    _closed_parameters: list[str] | None = None
 
     yaml_overwrites: dict[str, dict[str, YAMLType]] = {}
     """YAML fields that will be overwritten when calling `Settings.write`. Values can also be added by calling `Settings.add_yaml_overwrite`."""
@@ -109,7 +112,7 @@ class Settings(nc_jaml.YAMLWrapper):
         path = self.paths[0] if path is None else Path(path)
 
         lines = self.paths[0].read_text().splitlines()
-        
+
         offset_lineno = 0
         if not lines[0] == _SETTINGS_FILE_HEADER:
             lines.insert(0, _SETTINGS_FILE_HEADER)
@@ -190,8 +193,10 @@ class Settings(nc_jaml.YAMLWrapper):
                 self.yaml_overwrites, current_tags
             ):
                 val = line.removeprefix(leading_whitespace + tag + ":")
-                
-                new_val = nc_jaml.to_str(nc_jaml.nested_get(self.yaml_overwrites, current_tags))
+
+                new_val = nc_jaml.to_str(
+                    nc_jaml.nested_get(self.yaml_overwrites, current_tags)
+                )
                 new_val = val.replace(val.strip(), new_val)
                 lines[i] = leading_whitespace + tag + ":" + new_val + comment
 
@@ -213,3 +218,81 @@ class Settings(nc_jaml.YAMLWrapper):
             self._datasets = [Path(s) for s in datasets_str]
 
         return self._datasets
+
+    def _read_parameters(self) -> None:
+        # read all lines inside the FitParams tag
+        tag = "FitParams"
+        with open(self.paths[0], "r") as f:
+
+            inside_tag = False
+            indentation = -1
+            lines = []
+            for line in f:
+                line_stripped = line.lstrip()
+
+                if not inside_tag:
+
+                    if line_stripped.startswith(tag + ":"):
+                        inside_tag = True
+                        indentation = len(line) - len(line_stripped)
+
+                else:
+                    line_without_indentation = line[indentation:]
+
+                    # break when encountering a non-comment line containing a tag that is not at a higher or at the same level of indentation as the FitParams tag
+                    is_comment = line.lstrip().startswith("#")
+                    is_empty = line.isspace()
+                    is_same_level = len(line_without_indentation) == len(line.lstrip())
+                    is_higher_level = not line[:indentation].isspace()
+
+                    if (
+                        not is_comment
+                        and not is_empty
+                        and (is_higher_level or is_same_level)
+                    ):
+                        break
+
+                    lines.append(line)
+
+        self._all_parameters = []
+        self._open_parameters = []
+        self._closed_parameters = []
+
+        pattern = re.compile(
+            r"(#*)\s*\[(\w+)\s*,\s*\[[\-0-9.,\s]*\]\s*,\s*(?:FREE|BOUNDED)\]"
+        )  # pain
+        for line in lines:
+            for match in pattern.finditer(line):
+                hash = match.group(1)
+                param = match.group(2)
+
+                self._all_parameters.append(param)
+                if hash:
+                    self._closed_parameters.append(param)
+                else:
+                    self._open_parameters.append(param)
+
+        assert set(self._all_parameters) == set(
+            self._open_parameters + self._closed_parameters
+        )
+
+    @property
+    def all_parameters(self) -> list[str]:
+        if self._all_parameters is None or self._yaml_changed():
+            self._read_parameters()
+
+        return self._all_parameters
+
+    @property
+    def open_parameters(self) -> list[str]:
+        if self._open_parameters is None or self._yaml_changed():
+            self._read_parameters()
+
+        return self._open_parameters
+
+    @property
+    def closed_parameters(self) -> list[str]:
+        if self._closed_parameters is None or self._yaml_changed():
+            self._read_parameters()
+
+        return self._closed_parameters
