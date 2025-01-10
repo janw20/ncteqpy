@@ -19,6 +19,8 @@ class Settings(nc_jaml.YAMLWrapper):
     _open_parameters: list[str] | None = None
     _closed_parameters: list[str] | None = None
 
+    write_path: os.PathLike[str]
+
     yaml_overwrites: dict[str, dict[str, YAMLType]] = {}
     """YAML fields that will be overwritten when calling `Settings.write`. Values can also be added by calling `Settings.add_yaml_overwrite`."""
 
@@ -29,6 +31,7 @@ class Settings(nc_jaml.YAMLWrapper):
     def __init__(
         self,
         path: str | os.PathLike[str],
+        write_path: str | os.PathLike[str] | None = None,
         yaml_overwrites: dict[str, dict[str, YAMLType]] = {},
         yaml_comments: set[int] = set(),
         cache_path: str | os.PathLike[str] = Path("./.jaml_cache/"),
@@ -54,6 +57,11 @@ class Settings(nc_jaml.YAMLWrapper):
             raise ValueError("Please pass the file path to a YAML settings file")
 
         super().__init__(path, cache_path, retain_yaml)
+
+        if write_path is not None:
+            self.write_path = Path(write_path)
+        else:
+            self.write_path = path
 
         self.yaml_overwrites = yaml_overwrites
         self.yaml_comments = yaml_comments
@@ -93,7 +101,7 @@ class Settings(nc_jaml.YAMLWrapper):
         Parameters
         ----------
         path : str | os.PathLike[str] | None, optional
-            The path where to write the settings file, by default None. If this is None, the original settings file given by `Settings.path` is overwritten. Note that an existing file can only be overwritten if the first line is given by
+            The path where to write the settings file, by default None. If this is None, the settings file given is written to `Settings.write_path`. Note that the latter points to the original file if `write_path` is not passed to the `Run` constructor. Existing files can only be overwritten if the first line is given by
 
             `# !! File is writable by ncteqpy (changing this line will make it non-writable) !!`
 
