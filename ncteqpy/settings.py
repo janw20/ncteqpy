@@ -200,6 +200,7 @@ class Settings(nc_jaml.YAMLWrapper):
                 new_val = val.replace(val.strip(), new_val)
                 lines[i] = leading_whitespace + tag + ":" + new_val + comment
 
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("\n".join(lines))
 
     @property
