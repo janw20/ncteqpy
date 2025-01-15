@@ -12,6 +12,7 @@ from ncteqpy.kinematic_variables import (
     X,
     Y,
 )
+from ncteqpy.run import Runs
 from ncteqpy.settings import Settings
 
 # otherwise mypy complains with no-implicit-reexport
@@ -20,6 +21,8 @@ __all__ = [
     "Cut",
     "Dataset",
     "Datasets",
+    "Runs",
+    "Settings",
     "PT",
     "PT_MAX",
     "PT_MIN",
@@ -29,5 +32,4 @@ __all__ = [
     "Y_MIN",
     "X",
     "Y",
-    "Settings",
 ]
