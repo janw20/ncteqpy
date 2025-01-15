@@ -117,7 +117,7 @@ class Settings(nc_jaml.YAMLWrapper):
         assert len(self.paths) == 1
 
         # if path is None, we try to overwrite self.paths[0] if it includes _SETTINGS_FILE_HEADER
-        path = self.paths[0] if path is None else Path(path)
+        path = Path(self.write_path) if path is None else Path(path)
 
         lines = self.paths[0].read_text().splitlines()
 
