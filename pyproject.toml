@@ -12,6 +12,7 @@ numpy = "^2.1.1"
 pandas = "^2.2.2"
 matplotlib = "^3.9.2"
 scipy = "^1.14.1"
+simple-slurm = "^0.2.7"
 
 [build-system]
 requires = ["poetry-core"]

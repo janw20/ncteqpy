@@ -745,6 +745,17 @@ doc = ["jupyterlite-pyodide-kernel", "jupyterlite-sphinx (>=0.13.1)", "jupytext"
 test = ["Cython", "array-api-strict (>=2.0)", "asv", "gmpy2", "hypothesis (>=6.30)", "meson", "mpmath", "ninja", "pooch", "pytest", "pytest-cov", "pytest-timeout", "pytest-xdist", "scikit-umfpack", "threadpoolctl"]
 
 [[package]]
+name = "simple-slurm"
+version = "0.2.7"
+description = "A simple Python wrapper for Slurm with flexibility in mind."
+optional = false
+python-versions = ">=3.6"
+files = [
+    {file = "simple_slurm-0.2.7-py3-none-any.whl", hash = "sha256:8f61ee0a212fb95b2969a0b15ddcead9d2099fcb7e602f3655eab39819f721c3"},
+    {file = "simple_slurm-0.2.7.tar.gz", hash = "sha256:c439e5c756ca9e5f600c4f54cdbf31d44c91330db60b1854a0f244acc6f2d300"},
+]
+
+[[package]]
 name = "six"
 version = "1.16.0"
 description = "Python 2 and 3 compatibility utilities"
@@ -769,4 +780,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "bce8ea9ce98832893f6cda525222ded29214976fa04f5dbb372deb67501ecf7a"
+content-hash = "523cca288eac50e40a75f8faa4a0caf88dca2282e44636adbdaa2a815a3d8338"
