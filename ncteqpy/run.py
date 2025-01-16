@@ -175,7 +175,7 @@ class Runs:
             case "settings":
                 for j in indices:
                     self.settings[j].write()
-                    print(f"Settings written to {self.settings[j].paths[0]}")
+                    print(f"Settings written to {self.settings[j].write_path}")
 
             case "run":
                 for j in indices:
