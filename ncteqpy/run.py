@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import subprocess
 from typing import Any, Callable, Sequence, cast
