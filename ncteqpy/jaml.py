@@ -38,6 +38,10 @@ _YAMLNode: TypeAlias = dict[str, T] | list[T]
 YAMLType: TypeAlias = _YAMLNode["YAMLType"] | YAMLLeaf
 YAMLNode: TypeAlias = _YAMLNode[YAMLType]
 
+_PatternNode: TypeAlias = dict[str | None, T] | list[T]
+PatternType: TypeAlias = _PatternNode["PatternType"] | YAMLLeaf
+PatternNode: TypeAlias = _PatternNode[PatternType]
+
 
 def nested_get(
     d: YAMLType,
@@ -160,29 +164,29 @@ def to_str(y: YAMLType) -> str:
 
 
 class Pattern:
-    _pattern: YAMLType
+    _pattern: PatternType
 
-    def __init__(self, pattern: YAMLType) -> None:
+    def __init__(self, pattern: PatternType) -> None:
         self.pattern = pattern
 
     def __repr__(self) -> str:
         return f"Pattern(pattern={self.pattern})"
 
     @property
-    def pattern(self) -> YAMLType:
+    def pattern(self) -> PatternType:
         return self._pattern
 
     @pattern.setter
-    def pattern(self, value: YAMLType, verify: bool = True) -> None:
-        def _verify(p: YAMLType) -> None:
+    def pattern(self, value: PatternType, verify: bool = True) -> None:
+        def _verify(p: PatternType) -> None:
             if p is None:
                 return
 
             if isinstance(p, dict):
                 for key in p:
-                    if not isinstance(key, str):
+                    if not isinstance(key, str) and key is not None:
                         raise ValueError(
-                            f"Keys must be of type str, but found key '{key}' of type {type(key).__name__}"
+                            f"Keys must be of type str or None, but found key '{key}' of type {type(key).__name__}"
                         )
                     else:
                         _verify(p[key])
@@ -204,12 +208,12 @@ class Pattern:
 
     def matched_by(self, d: YAMLType) -> bool:
         for key in nested_iter(d):
-            if not nested_in(d, key):
+            if not nested_in(d, key):  # FIXME: match None as key in pattern
                 return False
         return True
 
-    def difference(self, d: YAMLType) -> Pattern:
-        diff: YAMLType = {}  # TODO: case self.pattern is not a dict
+    def difference(self, d: PatternType) -> Pattern:
+        diff: PatternType = {}  # TODO: case self.pattern is not a dict
         for key in nested_iter(self.pattern):
             print(key)
             if not nested_in(d, key):
@@ -235,7 +239,7 @@ class YAMLWrapper:
     def __init__(
         self,
         paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
-        cache_path: str | os.PathLike = pathlib.Path("./.jaml_cache/"),
+        cache_path: str | os.PathLike[str] = pathlib.Path("./.jaml_cache/"),
         retain_yaml: bool = False,
     ) -> None:
         """Wrapper class of a YAML file with convenience functions and pickling functionality.
@@ -534,9 +538,11 @@ class PatternComposer(Composer):
                     item_value = self.compose_node(node, item_key)
                     node.value.append((item_key, item_value))
                 # if pattern is not None and the key is in the pattern, compose the value
-                elif item_key.value in pattern:
+                elif item_key.value in pattern or None in pattern:
                     item_value = self.compose_node(
-                        node, item_key, pattern[item_key.value]
+                        node,
+                        item_key,
+                        pattern[item_key.value if item_key.value in pattern else None],
                     )
                     node.value.append((item_key, item_value))
                 # if the key is not in the pattern, skip the rest of the value node, i.e. one event for a scalar ...
