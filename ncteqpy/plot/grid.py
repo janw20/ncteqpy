@@ -51,6 +51,8 @@ class AxesGrid:
                 raise ValueError(
                     f"nrows * ncols must be greater than or equal {n_real}, the number of requested subplots"
                 )
+            kwargs_naxes["nrows"] = kwargs["nrows"]
+            kwargs_naxes["ncols"] = kwargs["ncols"]
         # if only nrows is given, we determine ncols automatically
         elif "nrows" in kwargs:
             kwargs_naxes["nrows"] = kwargs["nrows"]
@@ -82,7 +84,7 @@ class AxesGrid:
 
         self._n_real = n_real
         self._n_none = n_none
-        self._n_rows, self._n_cols = ax.shape if isinstance(ax, np.ndarray) else (1, 1)
+        self._n_rows, self._n_cols = self._ax.shape
 
     @property
     def fig(self) -> Figure:
