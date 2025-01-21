@@ -13,6 +13,7 @@ from ncteqpy.kinematic_variables import (
     Y,
 )
 from ncteqpy.run import Runs
+from ncteqpy.scans import ParameterScan1D, ParameterScan2D
 from ncteqpy.settings import Settings
 
 # otherwise mypy complains with no-implicit-reexport
@@ -21,6 +22,8 @@ __all__ = [
     "Cut",
     "Dataset",
     "Datasets",
+    "ParameterScan1D",
+    "ParameterScan2D",
     "Runs",
     "Settings",
     "PT",
