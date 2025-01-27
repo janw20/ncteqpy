@@ -1,3 +1,4 @@
+import ncteqpy.labels as labels
 from ncteqpy.chi2 import Chi2
 from ncteqpy.cuts import Cut
 from ncteqpy.data import Dataset, Datasets
@@ -22,6 +23,7 @@ __all__ = [
     "Cut",
     "Dataset",
     "Datasets",
+    "labels",
     "ParameterScan1D",
     "ParameterScan2D",
     "Runs",
