@@ -1,16 +1,15 @@
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Literal, Sequence, cast, override
+from typing import Any, Sequence, cast, override
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 import ncteqpy.jaml as jaml
-import matplotlib.pyplot as plt
-
-from ncteqpy.plot.scan import plot_scan_1d
 from ncteqpy.data import Datasets
+from ncteqpy.plot.scan import plot_scan_1d, plot_scan_2d
 
 
 def _all_equal(s: Sequence[Any]) -> bool:
@@ -19,6 +18,8 @@ def _all_equal(s: Sequence[Any]) -> bool:
 
 
 class ParameterScan(ABC, jaml.YAMLWrapper):
+
+    # lazy: bool = False
 
     _parameters_all: list[str] | None = None
     _parameters_all_indices: dict[str, int] | None = None
@@ -32,6 +33,17 @@ class ParameterScan(ABC, jaml.YAMLWrapper):
     _profile_params: pd.DataFrame | None = None
     _profile_chi2: pd.DataFrame | None = None
     _profile_chi2_per_data: pd.DataFrame | None = None
+
+    _minimum_params: pd.DataFrame | None = None
+    _minimum_chi2: float | None = None
+
+    def __init__(
+        self,
+        paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
+        cache_path: str | os.PathLike[str] = "./.jaml_cache",
+        retain_yaml: bool = False,
+    ) -> None:
+        super().__init__(paths, cache_path, retain_yaml)
 
     def _load_params(self) -> None:
         """Initialize `_parameters_names` and `_parameters_indices` by reading `Chi2Fcn: IndexOfInputParams` and `Chi2Fcn: ParamIndices`"""
@@ -74,7 +86,7 @@ class ParameterScan(ABC, jaml.YAMLWrapper):
         self._parameters_all = list(self._parameters_all_indices.keys())
 
     def _load_scan_info(self) -> None:
-        """Initialize `_target_delta_chi2`, `_margin` and `_num_steps`"""
+        """Initialize `_target_delta_chi2`, `_margin`, `_num_steps`, and `_minimum_chi2`"""
 
         pattern = jaml.Pattern(
             {
@@ -82,6 +94,7 @@ class ParameterScan(ABC, jaml.YAMLWrapper):
                     "targetDeltaChi2": None,
                     "rangeMargin": None,
                     "numberOfSteps": None,
+                    "Chi2AtMinimum": None,
                 }
             }
         )
@@ -97,12 +110,14 @@ class ParameterScan(ABC, jaml.YAMLWrapper):
         target_delta_chi2: list[float] = []
         margin: list[float] = []
         num_steps: list[int] = []
+        min_chi2: list[float] = []
         for y in map(lambda x: x[1], yaml):
             target_delta_chi2.append(
                 cast(float, jaml.nested_get(y, ["Scans", "targetDeltaChi2"]))
             )
             margin.append(cast(float, jaml.nested_get(y, ["Scans", "rangeMargin"])))
             num_steps.append(cast(int, jaml.nested_get(y, ["Scans", "numberOfSteps"])))
+            min_chi2.append(cast(float, jaml.nested_get(y, ["Scans", "Chi2AtMinimum"])))
 
         # check that all files have the same values
         # TODO: support multiple values per parameter?
@@ -110,14 +125,16 @@ class ParameterScan(ABC, jaml.YAMLWrapper):
             not _all_equal(target_delta_chi2)
             or not _all_equal(margin)
             or not _all_equal(num_steps)
+            or not _all_equal(min_chi2)
         ):
             raise ValueError(
-                "Incompatible scans: All files must have the same scan info"
+                "Incompatible scans: All files must have the same targetDeltaChi2, rangeMargin, numberOfSteps and chi2AtMinimum"
             )
 
         self._target_delta_chi2 = target_delta_chi2[0]
         self._margin = margin[0]
         self._num_steps = num_steps[0]
+        self._minimum_chi2 = min_chi2[0]
 
     @abstractmethod
     def _load_ranges(self) -> None:
@@ -132,23 +149,25 @@ class ParameterScan(ABC, jaml.YAMLWrapper):
         if self._parameters_all is None or self._yaml_changed():
             self._load_params()
 
-        assert isinstance(self._parameters_all, list)
+        assert self._parameters_all is not None
 
-        return self._parameters_all  # type: ignore[return-value]
+        return self._parameters_all
 
     @property
     def parameters_all_indices(self) -> dict[str, int]:
         if self._parameters_all_indices is None or self._yaml_changed():
             self._load_params()
 
-        return self._parameters_all_indices  # type: ignore[return-value]
+        assert self._parameters_all_indices is not None
+
+        return self._parameters_all_indices
 
     @property
     def target_delta_chi2(self) -> float:
         if self._target_delta_chi2 is None or self._yaml_changed():
             self._load_scan_info()
 
-        assert isinstance(self._target_delta_chi2, float)
+        assert self._target_delta_chi2 is not None
 
         return self._target_delta_chi2
 
@@ -157,7 +176,7 @@ class ParameterScan(ABC, jaml.YAMLWrapper):
         if self._margin is None or self._yaml_changed():
             self._load_scan_info()
 
-        assert isinstance(self._margin, float)
+        assert self._margin is not None
 
         return self._margin
 
@@ -166,9 +185,27 @@ class ParameterScan(ABC, jaml.YAMLWrapper):
         if self._num_steps is None or self._yaml_changed():
             self._load_scan_info()
 
-        assert isinstance(self._num_steps, int)
+        assert self._num_steps is not None
 
         return self._num_steps
+
+    @property
+    def minimum_chi2(self) -> float:
+        if self._minimum_chi2 is None or self._yaml_changed():
+            self._load_scan_info()
+
+        assert self._minimum_chi2 is not None
+
+        return self._minimum_chi2
+
+    @property
+    def minimum_params(self) -> pd.DataFrame:
+        if self._minimum_params is None or self._yaml_changed():
+            self._load_ranges()
+
+        assert self._minimum_params is not None
+
+        return self._minimum_params
 
     @property
     def parameters_range(self) -> pd.DataFrame:
@@ -235,6 +272,7 @@ class ParameterScan1D(ParameterScan):
                             "parameterName": None,
                             "upperRange": None,
                             "lowerRange": None,
+                            "paramValueInMinimum": None,
                         }
                     ]
                 }
@@ -251,6 +289,7 @@ class ParameterScan1D(ParameterScan):
         param_indices: list[int] = []
         param_names: list[str] = []
         ranges: list[list[float]] = []
+        param_min: list[float] = []
         for y in map(lambda x: x[1], yaml):
 
             for scan in cast(
@@ -261,16 +300,19 @@ class ParameterScan1D(ParameterScan):
                 param_names_i = cast(str, scan["parameterName"])
                 ranges_upper_i = cast(float, scan["upperRange"])
                 ranges_lower_i = cast(float, scan["lowerRange"])
+                param_min_i = cast(float, scan["paramValueInMinimum"])
 
                 param_indices.append(param_indices_i)
                 param_names.append(param_names_i)
                 ranges.append([ranges_lower_i, ranges_upper_i])
+                param_min.append(param_min_i)
 
         assert _all_equal(
             [
                 len(param_indices),
                 len(param_names),
                 len(ranges),
+                len(param_min),
             ]
         )
 
@@ -286,9 +328,9 @@ class ParameterScan1D(ParameterScan):
                 raise ValueError(f"Duplicate parameter {p} (index {i})")
 
         # sort the columns by the parameter indices
-        param_indices, param_names, ranges = zip(
+        param_indices, param_names, ranges, param_min = zip(
             *sorted(
-                zip(param_indices, param_names, ranges),
+                zip(param_indices, param_names, ranges, param_min),
                 key=lambda x: x[0],
             )
         )
@@ -296,6 +338,7 @@ class ParameterScan1D(ParameterScan):
         self._parameters_scanned = list(param_names)
         self._parameters_scanned_indices = {p: i for i, p in enumerate(param_names)}
         self._parameters_range = pd.DataFrame(np.array(ranges).T, columns=param_names)
+        self._minimum_params = pd.DataFrame([param_min], columns=param_names)
 
     @property
     def parameters_scanned(self) -> list[str]:
@@ -394,7 +437,8 @@ class ParameterScan1D(ParameterScan):
         )
 
         self._profile_params = pd.DataFrame(
-            np.array(profile_params).T, columns=pd.Index(params, name="parameter")
+            np.array(profile_params).T + self.minimum_params.values[0],
+            columns=pd.Index(params, name="parameter"),
         )
         self._profile_chi2 = pd.DataFrame(
             np.array(profile_chi2).T, columns=pd.Index(params, name="parameter")
@@ -417,24 +461,6 @@ class ParameterScan1D(ParameterScan):
         )  # TODO: may be None if no per-data breakdown was loaded
 
         return self._datasets
-
-    @property
-    def profile_params(self) -> pd.DataFrame:
-        if self._profile_params is None or self._yaml_changed():
-            self._load_profile()
-
-        assert self._profile_params is not None
-
-        return self._profile_params
-
-    @property
-    def profile_chi2(self) -> pd.DataFrame:
-        if self._profile_chi2 is None or self._yaml_changed():
-            self._load_profile()
-
-        assert self._profile_chi2 is not None
-
-        return self._profile_chi2
 
     @property
     def profile_chi2_per_data(self) -> pd.DataFrame:
@@ -491,11 +517,15 @@ class ParameterScan1D(ParameterScan):
             profile_chi2_groups = None
             data_groups_labels = None
 
+        minimum = self.minimum_params.copy()
+        minimum["chi2"] = self.minimum_chi2
+
         plot_scan_1d(
             ax=ax,
             profile_params=self.profile_params,
             profile_chi2=self.profile_chi2,
             parameter=parameter,
+            minimum=minimum,
             profile_chi2_groups=profile_chi2_groups,
             groups_labels=data_groups_labels,
             **kwargs,
@@ -506,6 +536,34 @@ class ParameterScan2D(ParameterScan):
 
     _parameters_scanned: list[tuple[str, str]] | None = None
     _parameters_scanned_indices: dict[tuple[str, str], int] | None = None
+
+    _pattern_all = jaml.Pattern(
+        {
+            "Chi2Fcn": {"IndexOfInputParams": None, "ParamIndices": None},
+            "Scans": {
+                "targetDeltaChi2": None,
+                "rangeMargin": None,
+                "numberOfSteps": None,
+                "Chi2AtMinimum": None,
+                "ParameterScans2D": {
+                    None: {
+                        "upperRange1": None,
+                        "lowerRange1": None,
+                        "upperRange2": None,
+                        "lowerRange2": None,
+                        "parameterIndex1": None,
+                        "parameterIndex2": None,
+                        "parameterName1": None,
+                        "parameterName2": None,
+                        "paramValueInMinimum1": None,
+                        "paramValueInMinimum2": None,
+                        "ParamValues": None,
+                        "Chi2Values": None,
+                    }
+                },
+            },
+        }
+    )
 
     def __init__(
         self,
@@ -532,6 +590,8 @@ class ParameterScan2D(ParameterScan):
                             "parameterIndex2": None,
                             "parameterName1": None,
                             "parameterName2": None,
+                            "paramValueInMinimum1": None,
+                            "paramValueInMinimum2": None,
                         }
                     }
                 }
@@ -548,6 +608,7 @@ class ParameterScan2D(ParameterScan):
 
         param_indices: list[tuple[int, int]] = []
         param_names: list[tuple[str, str]] = []
+        param_min: dict[str, float] = {}
         ranges: list[list[tuple[float, float]]] = []
         for y in map(lambda x: x[1], yaml):
 
@@ -561,12 +622,24 @@ class ParameterScan2D(ParameterScan):
                 param_names_i = cast(
                     tuple[str, str], (scan["parameterName1"], scan["parameterName2"])
                 )
+                param_min_i = cast(
+                    tuple[float, float],
+                    (scan["paramValueInMinimum1"], scan["paramValueInMinimum2"]),
+                )
                 ranges_upper_i = cast(
                     tuple[float, float], (scan["upperRange1"], scan["upperRange2"])
                 )
                 ranges_lower_i = cast(
                     tuple[float, float], (scan["lowerRange1"], scan["lowerRange2"])
                 )
+
+                for i in range(2):
+                    if not param_names_i[i] in param_min:
+                        param_min[param_names_i[i]] = param_min_i[i]
+                    elif param_min[param_names_i[i]] != param_min_i[i]:
+                        raise ValueError(
+                            f"Multiple minimum values for parameter {param_names_i[i]}"
+                        )
 
                 # sort the parameter column levels by the parameter indices
                 param_indices_i, param_names_i, ranges_upper_i, ranges_lower_i = zip(
@@ -617,6 +690,11 @@ class ParameterScan2D(ParameterScan):
         self._parameters_scanned_indices = {
             p: i for i, p in enumerate(self._parameters_scanned)
         }
+        param_names_flat = sorted(
+            set(y for x in param_names for y in x),
+            key=lambda x: self.parameters_all_indices[x],
+        )
+        self._minimum_params = pd.DataFrame([param_min], columns=param_names_flat)
         self._parameters_range = pd.DataFrame(
             np.array([y for x in ranges for y in x]).T,
             columns=pd.MultiIndex.from_tuples(
@@ -652,7 +730,7 @@ class ParameterScan2D(ParameterScan):
             yaml = [(Path(), yaml)]
 
         params: list[tuple[str, str]] = []
-        profile_params: list[list[list[float]]] = []
+        profile_params: list[list[float]] = []
         profile_chi2: list[list[float]] = []
         for y in map(lambda x: x[1], yaml):
 
@@ -661,31 +739,51 @@ class ParameterScan2D(ParameterScan):
                 jaml.nested_get(y, ["Scans", "ParameterScans2D"]),
             ).values():
 
-                params_tmp = cast(
+                params_i = cast(
                     tuple[str, str], (scan["parameterName1"], scan["parameterName2"])
                 )
-                profile_params_tmp = [
-                    y
-                    for x in cast(list[list[list[float]]], scan["ParamValues"])
-                    for y in x
+                profile_params_i = list(
+                    map(
+                        list,
+                        zip(
+                            *(
+                                y
+                                for x in cast(
+                                    list[list[list[int]]], scan["ParamValues"]
+                                )
+                                for y in x
+                            )
+                        ),
+                    )
+                )
+                profile_chi2_i = [
+                    y for x in cast(list[list[float]], scan["Chi2Values"]) for y in x
                 ]
 
                 # sort the parameter column levels by the parameter indices
-                _, params_tmp, profile_params_tmp = zip(
+                params_i, profile_params_i = zip(
                     *sorted(
-                        zip(params, params_tmp, profile_params_tmp),
-                        key=lambda x: self.parameters_scanned_indices[x[0]],
+                        zip(params_i, profile_params_i),
+                        key=lambda x: self.parameters_all_indices[x[0]],
                     )
                 )
 
-                profile_params.append(list(map(list, zip(*profile_params_tmp))))
+                params.append(params_i)
+                profile_params.append(profile_params_i)
+                profile_chi2.append(profile_chi2_i)
 
-                profile_chi2.append(
-                    [y for x in cast(list[list[float]], scan["Chi2Values"]) for y in x]
-                )
+        assert _all_equal([len(params), len(profile_params), len(profile_chi2)])
+
+        # sort the columns by the parameter indices
+        params, profile_params, profile_chi2 = zip(
+            *sorted(
+                zip(params, profile_params, profile_chi2),
+                key=lambda x: self.parameters_scanned_indices[x[0]],
+            )
+        )
 
         self._profile_params = pd.DataFrame(
-            np.array(profile_params).T,
+            np.array([y for x in profile_params for y in x]).T,
             columns=pd.MultiIndex.from_tuples(
                 [(p1, p2, i) for p1, p2 in params for i in range(2)],
                 names=("parameter1", "parameter2", "parameter_index"),
@@ -715,3 +813,23 @@ class ParameterScan2D(ParameterScan):
         assert self._parameters_scanned_indices is not None
 
         return self._parameters_scanned_indices
+
+    def plot(
+        self,
+        ax: plt.Axes | Sequence[plt.Axes],
+        parameters: tuple[str, str] | list[tuple[str, str]] | None = None,
+        **kwargs: Any,
+    ) -> None:
+
+        minimum = self.minimum_params.copy()
+        minimum["chi2"] = self.minimum_chi2
+
+        plot_scan_2d(
+            ax=ax,
+            profile_params=self.profile_params,
+            profile_chi2=self.profile_chi2,
+            parameters=parameters,
+            minimum=minimum,
+            tolerance=self.target_delta_chi2,
+            **kwargs,
+        )
