@@ -3,6 +3,7 @@ from __future__ import annotations
 from math import sqrt
 from typing import Any, Sequence
 
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -122,6 +123,8 @@ def plot_scan_2d(
         ax_i.set_adjustable("box")
         ax_i.set_box_aspect(1)
 
+        norm = mcolors.TwoSlopeNorm(tolerance) if tolerance is not None else None
+
         image = ax_i.imshow(
             np.reshape(profile_chi2[p] - minimum["chi2"].iloc[0], (n, n)),
             extent=(
@@ -130,13 +133,20 @@ def plot_scan_2d(
                 profile_params[*p, 1].min(),
                 profile_params[*p, 1].max(),
             ),
+            cmap="Spectral_r",
+            norm=norm,  # pyright: ignore[reportArgumentType]
             interpolation="bicubic",
             origin="lower",
             aspect="auto",
+            **kwargs,
         )
 
-        cb = ax_i.figure.colorbar(image, ax=ax_i)
+        cb = ax_i.figure.colorbar(
+            image,
+            ax=ax_i,
+        )
         cb.set_label(r"$\Delta \chi^2$")
+        cb.ax.set_yscale("linear")
 
         if tolerance is not None:
             c = ax_i.contour(
@@ -145,7 +155,6 @@ def plot_scan_2d(
                 np.reshape(profile_chi2[p] - minimum["chi2"].iloc[0], (n, n)),
                 levels=[tolerance / 2, tolerance, 2 * tolerance],
                 colors="black",
-                **kwargs,
             )
             ax_i.clabel(c, c.levels)  # pyright: ignore[reportAttributeAccessIssue]
 
@@ -155,4 +164,19 @@ def plot_scan_2d(
             xlabel=f"${parameters_cj15_py_to_tex[p[0]]}$",
             ylabel=f"${parameters_cj15_py_to_tex[p[1]]}$",
         )
+
+        # fix for overlapping ticks
+        ax_i.ticklabel_format(
+            axis="both",
+            style="sci",
+            scilimits=(
+                -2,
+                ax_i.xaxis.major.formatter._powerlimits[  # pyright: ignore[reportAttributeAccessIssue]
+                    1
+                ],
+            ),
+        )
+        # alternative fix for overlapping ticks
+        # ax.xaxis.set_tick_params(rotation=20)
+
         ax_i.grid()
