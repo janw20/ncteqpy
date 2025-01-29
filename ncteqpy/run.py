@@ -161,6 +161,9 @@ class Runs:
         if len(self.indices_split) > 1:
             self.batch = []
             for j, indices in enumerate(self.indices_split):
+                if not indices:
+                    continue
+
                 self.batch.append(
                     ss.Slurm(
                         array=indices,
