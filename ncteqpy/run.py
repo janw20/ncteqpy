@@ -17,27 +17,30 @@ def intrange(arg: str) -> int | range:
     elif len(ints) == 2:
         return range(int(ints[0]), int(ints[1]) + 1)
     else:
-        raise argparse.ArgumentTypeError("Invalid range")
+        raise argparse.ArgumentTypeError(f"Invalid range {arg}")
 
 
 class Runs:
 
     _num_runs: int
-    _settings_input = dict[int, Settings] | Callable[[int], Settings]
+    _settings_input: dict[int, Settings] | Callable[[int], Settings]
     _settings: dict[int, Settings] | None = None
 
     _args: argparse.Namespace | None
     _indices: list[int | range]
+    _indices_split: list[list[int | range]]
     _indices_flat: list[int]
 
-    batch: ss.Slurm
+    MAX_ARRAY_TASKS = 2000
+
+    batch: ss.Slurm | list[ss.Slurm] | None = None
 
     def __init__(
         self,
         num_runs: int,
         description: str,
         settings: dict[int, Settings] | Callable[[int], Settings],
-        slurm_batch_kwargs: dict[str, Any],
+        slurm_batch_kwargs: dict[str, Any] | None = None,
         slurm_cmds: str | Sequence[str] | None = None,
         parse_args: bool = True,
         indices: list[int | range] | None = None,
@@ -71,14 +74,54 @@ class Runs:
             self.parse_args(num_runs, description)
 
         else:
-            self._indices = range(num_runs) if indices is None else indices
+            self._indices = [range(num_runs)] if indices is None else indices
+
+        self._indices_split = [[]]
+        for i in self._indices:
+            current_max = len(self._indices_split) * self.MAX_ARRAY_TASKS
+            prev_max = current_max - self.MAX_ARRAY_TASKS
+
+            if isinstance(i, int):
+                chunk, i_new = divmod(i, self.MAX_ARRAY_TASKS)
+
+                if chunk >= len(self._indices_split):
+                    self._indices_split.extend(
+                        [] for _ in range(chunk - len(self._indices_split) + 1)
+                    )
+
+                self._indices_split[chunk].append(i_new)
+            else:
+                chunk_start, i_start_new = divmod(i.start, self.MAX_ARRAY_TASKS)
+                chunk_stop, i_stop_new = divmod(i.stop, self.MAX_ARRAY_TASKS)
+
+                if chunk_stop >= len(self._indices_split):
+                    self._indices_split.extend(
+                        [] for _ in range(chunk_stop - len(self._indices_split) + 1)
+                    )
+
+                # if the whole range is inside a single chunk
+                if chunk_start == chunk_stop:
+                    self._indices_split[chunk_start].append(
+                        range(i_start_new, i_stop_new)
+                    )
+                # if the range spans multiple chunks
+                else:
+                    self._indices_split[chunk_start].append(
+                        range(i_start_new, self.MAX_ARRAY_TASKS)
+                    )
+                    for j in range(chunk_start + 1, chunk_stop):
+                        self._indices_split[chunk_start + j].append(
+                            range(0, self.MAX_ARRAY_TASKS)
+                        )
+                    self._indices_split[chunk_stop].append(range(0, i_stop_new))
 
         self._indices_flat = [
             j for i in self._indices for j in (i if isinstance(i, range) else [i])
         ]
         self._settings_input = settings
 
-        self.init_slurm(slurm_batch_kwargs, slurm_cmds)
+        if slurm_batch_kwargs is not None and slurm_cmds is not None:
+            self.init_slurm(slurm_batch_kwargs, slurm_cmds)
 
     def parse_args(self, num_runs: int, description: str) -> None:
         """Parse the command line arguments."""
@@ -108,41 +151,36 @@ class Runs:
         args = parser.parse_args()
         self._args = args
 
-        self._indices = cast(list[int | range], args.i) if args.i else range(num_runs)
+        self._indices = cast(list[int | range], args.i) if args.i else [range(num_runs)]
 
     def init_slurm(
-        self, batch_kwargs: dict[str, Any], cmds: str | Sequence[str] | None = None
+        self, batch_kwargs: dict[str, Any], cmds: str | Sequence[str]
     ) -> None:
-        """Create the SLURM batch script."""
+        """Create the SLURM batch script(s)."""
 
-        batch_kwargs_default = {
-            "ntasks": 1,
-            "cpus_per_task": 1,
-            "partition": ["normal"],
-            "job_name": "ncteqpp",
-            "time": "1-00:00:00",
-            "mail_type": "END",
-        }
-
-        cmds_default = [
-            "ml Apptainer/1.2.5",
-            "container_path='../../Apptainer/ncteqpp-ubuntu22-amd64.sif'",
-            "settings_paths=(\n  "
-            + "\n  ".join(f"'{self.settings[i].write_path}'" for i in self.indices_flat)
-            + "\n)",
-            "export PMIX_MCA_gds=hash",
-            "apptainer exec --bind=/usr/bin/sbatch,/usr/include/slurm,/usr/lib64/slurm,/etc/slurm,/etc/passwd,/usr/lib64/libmunge.so.2,/var/run/munge $container_path ./MainFit $settings_paths[$SLURM_ARRAY_TASK_ID]",
-        ]
-
-        batch_kwargs = batch_kwargs_default | batch_kwargs
-        cmds = cmds_default if cmds is None else cmds
-
-        self.batch = ss.Slurm(
-            array=self.indices,
-            **batch_kwargs,
-        )
-        for cmd in cmds:
-            self.batch.add_cmd(cmd)
+        if len(self.indices_split) > 1:
+            self.batch = []
+            for j, indices in enumerate(self.indices_split):
+                self.batch.append(
+                    ss.Slurm(
+                        array=indices,
+                        **batch_kwargs,
+                    )
+                )
+                for cmd in cmds:
+                    self.batch[-1].add_cmd(
+                        cmd.replace(
+                            ss.Slurm.SLURM_ARRAY_TASK_ID,  # pyright: ignore[reportAttributeAccessIssue]
+                            f"$(( {ss.Slurm.SLURM_ARRAY_TASK_ID} + {j * self.MAX_ARRAY_TASKS} ))",  # pyright: ignore[reportAttributeAccessIssue]
+                        )
+                    )
+        else:
+            self.batch = ss.Slurm(
+                array=self.indices,
+                **batch_kwargs,
+            )
+            for cmd in cmds:
+                self.batch.add_cmd(cmd)
 
     def run(self, i: int) -> None:
         """Run the fit with the settings at index `i`."""
@@ -150,12 +188,26 @@ class Runs:
         subprocess.run(["./MainFit", self.settings[i].write_path])
 
     @property
-    def script(self) -> str:
-        return self.batch.script()
+    def script(self) -> str | list[str] | None:
+        if isinstance(self.batch, ss.Slurm):
+            return self.batch.script()
+        elif isinstance(self.batch, list):
+            return [batch.script() for batch in self.batch]
+        else:
+            return None
 
     def submit(self) -> None:
         """Submit the SLURM batch script."""
-        self.batch.sbatch()
+        if self.batch is not None:
+            if isinstance(self.batch, list):
+                for batch in self.batch:
+                    batch.sbatch()
+            elif isinstance(self.batch, ss.Slurm):
+                self.batch.sbatch()
+        else:
+            raise ValueError(
+                "SLURM batch script not initialized. Did you pass `slurm_batch_kwargs` and `slurm_cmds` to the constructor?"
+            )
 
     def exec(self, i: int | None = None) -> None:
         """Execute the command specified in the CLI."""
@@ -167,7 +219,11 @@ class Runs:
 
         match self.args.command:
             case "script":
-                print(self.script)
+                if isinstance(self.script, list):
+                    for s in self.script:
+                        print(s)
+                else:
+                    print(self.script)
 
             case "submit":
                 self.submit()
@@ -199,12 +255,17 @@ class Runs:
         return self._settings
 
     @property
-    def args(self) -> argparse.Namespace:
+    def args(self) -> argparse.Namespace | None:
         return self._args
 
     @property
     def indices(self) -> list[int | range]:
         return self._indices
+
+    @property
+    def indices_split(self) -> list[list[int | range]]:
+        """`Runs.indices` split into chunks between two integer multiples of `Runs.MAX_ARRAY_TASKS`, i.e., chunk i contains the indices between `i * Runs.MAX_ARRAY_TASKS` and `(i + 1) * Runs.MAX_ARRAY_TASKS` modulo `Runs.MAX_ARRAY_TASKS`. This is needed for submitting multiple jobs when the array indices exceed the maximum allowed by SLURM."""
+        return self._indices_split
 
     @property
     def indices_flat(self) -> list[int]:
