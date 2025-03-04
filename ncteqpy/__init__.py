@@ -2,6 +2,7 @@ import ncteqpy.labels as labels
 from ncteqpy.chi2 import Chi2
 from ncteqpy.cuts import Cut
 from ncteqpy.data import Dataset, Datasets
+from ncteqpy.hessian import Hessian
 from ncteqpy.kinematic_variables import (
     PT,
     PT_MAX,
@@ -24,6 +25,7 @@ __all__ = [
     "Dataset",
     "Datasets",
     "labels",
+    "Hessian",
     "ParameterScan1D",
     "ParameterScan2D",
     "Runs",
