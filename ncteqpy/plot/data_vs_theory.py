@@ -15,6 +15,7 @@ from matplotlib.patches import Patch
 
 import ncteqpy.labels as nc_labels
 import ncteqpy.plot.util as p_util
+from ncteqpy.util import update_kwargs
 
 
 class AvoidingLegend(Legend):
@@ -31,25 +32,6 @@ class AvoidingLegend(Legend):
         bboxes, lines, offsets = super()._auto_legend_data()
         bboxes.extend(self.avoid)
         return bboxes, lines, offsets
-
-
-def _update_kwargs(
-    kwargs: dict[str, Any],
-    kwargs_user: dict[str, Any] | list[dict[str, Any] | None],
-    i: int | None = None,
-) -> dict[str, Any]:
-    if isinstance(kwargs_user, dict):
-        return kwargs | kwargs_user
-    elif isinstance(kwargs_user, list):
-        if i is not None:
-            if i < len(kwargs_user) and kwargs_user[i] is not None:
-                return kwargs | kwargs_user[i]  # type: ignore[operator] # this is correct but mypy complains
-            else:
-                return kwargs
-        else:
-            raise ValueError("i must be given if kwargs_user is list")
-    else:
-        raise ValueError("kwargs_user must be dict or list")
 
 
 def plot(
@@ -151,12 +133,12 @@ def plot_basic(
             "color": "black",
             "label": "Data",
         }
-        kwargs = _update_kwargs(kwargs_default, kwargs_data)
+        kwargs = update_kwargs(kwargs_default, kwargs_data)
         ax.errorbar(x=data[x], y=data[y], **kwargs)
 
     if theory is not None:
         kwargs_default = {"label": "Theory"}
-        kwargs = _update_kwargs(kwargs_default, kwargs_data)
+        kwargs = update_kwargs(kwargs_default, kwargs_data)
         ax.plot(x=theory[x], y=theory[y], **kwargs)
 
 
@@ -230,7 +212,7 @@ def plot_DIS(
             if legend and i == 0:
                 kwargs_default["label"] = "Data"
 
-            kwargs = _update_kwargs(
+            kwargs = update_kwargs(
                 kwargs_default, kwargs_data, i
             )  # TODO: if kwargs_data is dict, the label should only be set once
 
@@ -261,7 +243,7 @@ def plot_DIS(
             kwargs_default = {}
 
             if legend and kwargs_index == 0:
-                kwargs = _update_kwargs(
+                kwargs = update_kwargs(
                     kwargs_default
                     | {
                         "color": (
@@ -295,7 +277,7 @@ def plot_DIS(
             else:
                 label = {}
 
-            kwargs = _update_kwargs(kwargs_default | label, kwargs_theory, kwargs_index)
+            kwargs = update_kwargs(kwargs_default | label, kwargs_theory, kwargs_index)
 
             l = ax.plot(
                 theo_i[x_variable],
@@ -526,7 +508,7 @@ def plot_HQ(
             if legend and i == 0:
                 kwargs_default["label"] = "Data"
 
-            kwargs = _update_kwargs(
+            kwargs = update_kwargs(
                 kwargs_default, kwargs_data, i
             )  # TODO: if kwargs_data is dict, the label should only be set once
 
@@ -583,7 +565,7 @@ def plot_HQ(
             else:
                 label = {}
 
-            kwargs = _update_kwargs(kwargs_default | label, kwargs_theory, kwargs_index)
+            kwargs = update_kwargs(kwargs_default | label, kwargs_theory, kwargs_index)
 
             l = ax.plot(
                 np.append(theo_y["pT_min"].iloc[0], theo_y["pT_max"]),
@@ -1017,6 +999,7 @@ def plot_WZPROD(
         ax2.set_yscale(ax.get_yscale())
         ax2.set_yticks(ticks=ticks, labels=tick_labels)
 
+
 def _set_labels(
     ax: plt.Axes,
     x_variable: str,
@@ -1052,5 +1035,5 @@ def _set_labels(
             raise ValueError(f"ylabel must be str or dict but given was {type(ylabel)}")
 
     if title is not None:
-        kwargs_title = _update_kwargs({"fontsize": "medium"}, kwargs_title)
+        kwargs_title = update_kwargs({"fontsize": "medium"}, kwargs_title)
         ax.set_title(title, **kwargs_title)
