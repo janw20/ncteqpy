@@ -12,7 +12,7 @@ import yaml.parser
 
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
-from ncteqpy.cuts import Cut
+from ncteqpy.cuts import Cut, Cuts
 from ncteqpy.settings import Settings
 
 
@@ -22,6 +22,7 @@ class Datasets(jaml.YAMLWrapper):
     _index: pd.DataFrame | None = None
 
     duplicate_fallback: list[Path]
+    cuts: Cuts | None = None
 
     def __init__(
         self,
@@ -47,6 +48,8 @@ class Datasets(jaml.YAMLWrapper):
                     )
 
                 path = [path / p for p in settings.datasets]
+
+            self.cuts = settings.cuts
 
         super().__init__(path, cache_path, retain_yaml)
 
@@ -89,6 +92,7 @@ class Datasets(jaml.YAMLWrapper):
         duplicate_fallback: (
             str | os.PathLike[str] | Sequence[str | os.PathLike[str]] | None
         ) = None,
+        apply_cuts: bool = False,
     ) -> Dataset:
         datasets = self.index.query("id_dataset == @id_dataset")
         match len(datasets):
@@ -129,14 +133,34 @@ class Datasets(jaml.YAMLWrapper):
                     raise ValueError(
                         f"Multiple dataset files with ID {id_dataset} found. Please provide the duplicate_fallback argument or load one of the files by its path:\n{dataset_variants}"
                     )
+            case _:
+                raise ValueError(
+                    f"Unexpected number of datasets found: {len(datasets)}"
+                )  # we need this because otherwise pyright complains that the path variable might not be initialized
+
+        if apply_cuts:
+            if self.cuts is None:
+                raise ValueError(
+                    "No cuts provided. Please pass a Settings object to the Datasets constructor or set the cuts attribute manually."
+                )
+
+            cut = None
+            if id_dataset in self.cuts.by_dataset_id:
+                cut = self.cuts.by_dataset_id[id_dataset]
+
+            type_experiment = datasets[datasets["path"] == path][
+                "type_experiment"
+            ].iloc[0]
+            if type_experiment in self.cuts.by_type_experiment:
+                cut = (
+                    self.cuts.by_type_experiment[type_experiment]
+                    if cut is None
+                    else cut & self.cuts.by_type_experiment[type_experiment]
+                )
+
+            return Dataset(path, cut)
 
         return Dataset(path)
-
-    # def by_path(self, path: str | os.PathLike) -> Dataset:
-    #     pass
-
-    # def by_name(self, name: str) -> Dataset:
-    #     pass
 
     def _load_dataset_index(
         self, verbose: bool | int = False, settings: None = None
