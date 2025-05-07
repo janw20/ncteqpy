@@ -1,6 +1,6 @@
 import ncteqpy.labels as labels
 from ncteqpy.chi2 import Chi2
-from ncteqpy.cuts import Cut
+from ncteqpy.cuts import Cut, Cuts
 from ncteqpy.data import Dataset, Datasets
 from ncteqpy.hessian import Hessian
 from ncteqpy.kinematic_variables import (
@@ -22,6 +22,7 @@ from ncteqpy.settings import Settings
 __all__ = [
     "Chi2",
     "Cut",
+    "Cuts",
     "Dataset",
     "Datasets",
     "labels",
