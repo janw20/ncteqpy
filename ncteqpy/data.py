@@ -19,10 +19,14 @@ from ncteqpy.settings import Settings
 # TODO: make possible to load only subdirs or list of paths
 class Datasets(jaml.YAMLWrapper):
 
+    _cuts: Cuts | None = None
     _index: pd.DataFrame | None = None
+    _points: pd.DataFrame | None = None
+    _points_after_cuts: pd.DataFrame | None = None
+    _cached_datasets: dict[Path, Dataset] = {}
+    _cached_datasets_with_cuts: dict[Path, Dataset] = {}
 
     duplicate_fallback: list[Path]
-    cuts: Cuts | None = None
 
     def __init__(
         self,
@@ -49,7 +53,7 @@ class Datasets(jaml.YAMLWrapper):
 
                 path = [path / p for p in settings.datasets]
 
-            self.cuts = settings.cuts
+            self._cuts = settings.cuts
 
         super().__init__(path, cache_path, retain_yaml)
 
@@ -61,11 +65,55 @@ class Datasets(jaml.YAMLWrapper):
         self.duplicate_fallback = [Path(p) for p in duplicate_fallback]
 
     @property
+    def cuts(self) -> Cuts | None:
+        return self._cuts
+
+    def apply(self, cuts: Cuts) -> None:
+        self._cuts = cuts
+        if self._points is not None:
+            self._points_after_cuts = self._points.drop(
+                self._points.loc[~cuts.accept(self._points)].index
+            )
+
+    @property
     def index(self) -> pd.DataFrame:
         if self._index is None or self._yaml_changed():
             self._load_dataset_index()
 
-        return self._index  # type: ignore[return-value] # self._index is set in self.index_datasets())
+        assert self._index is not None
+
+        return self._index
+
+    @property
+    def points(self) -> pd.DataFrame:
+        if self._points is None or self._yaml_changed():
+            self._load_points()
+
+        assert self._points is not None
+
+        return self._points
+
+    @property
+    def points_after_cuts(self) -> pd.DataFrame:
+        if self._points_after_cuts is None or self._yaml_changed():
+            if self.cuts is None:
+                raise ValueError(
+                    "No cuts provided. Please pass a Settings object to the Datasets constructor or set the cuts attribute manually."
+                )
+
+            self._load_points()
+
+        assert self._points_after_cuts is not None
+
+        return self._points_after_cuts
+
+    @property
+    def cached_datasets(self) -> dict[Path, Dataset]:
+        return self._cached_datasets
+
+    @property
+    def cached_datasets_with_cuts(self) -> dict[Path, Dataset]:
+        return self._cached_datasets_with_cuts
 
     def filtered_index(
         self,
@@ -158,9 +206,157 @@ class Datasets(jaml.YAMLWrapper):
                     else cut & self.cuts.by_type_experiment[type_experiment]
                 )
 
-            return Dataset(path, cut)
+            dataset = Dataset(path, cut)
+            self._cached_datasets_with_cuts[path] = dataset
 
-        return Dataset(path)
+            return dataset
+
+        dataset = Dataset(path)
+        self._cached_datasets[path] = dataset
+
+        return dataset
+
+    def _load_points(self, verbose: bool | int = False, settings: None = None) -> None:
+        points_list = []
+
+        points_pattern = jaml.Pattern(
+            {
+                "Description": {
+                    "TypeExp": None,
+                    "FinalState": None,
+                    "IDDataSet": None,
+                    "AZValues1": None,
+                    "AZValues2": None,
+                },
+                "GridSpec": {
+                    "NumberOfCorrSysErr": None,
+                    "TypeColumns": None,
+                    "Grid": None,
+                },
+            }
+        )
+        points_yaml = self._load_yaml(points_pattern)
+
+        assert isinstance(points_yaml, list)
+
+        info: dict[str, Path | jaml.YAMLType] = {
+            "id_dataset": None,
+            "path": None,
+            "type_experiment": None,
+            "A1": None,
+            "Z1": None,
+            "A2": None,
+            "Z2": None,
+            "final_state": None,
+            "correlated_systematic_uncertainties": None,
+        }
+
+        for p, data in cast(list[tuple[Path, jaml.YAMLType]], points_yaml):
+            if not jaml.nested_in(data, ["Description", "IDDataSet"]):
+                continue
+
+            # we have to deal with A and Z first because we can't index None
+            az1 = (
+                az
+                if isinstance(
+                    az := jaml.nested_get(data, ["Description", "AZValues1"]), list
+                )
+                else (None, None)
+            )
+            az2 = (
+                az
+                if isinstance(
+                    az := jaml.nested_get(data, ["Description", "AZValues2"]), list
+                )
+                else (None, None)
+            )
+
+            # if a field is not in the data file we set it to None in the dataframe
+            info["id_dataset"] = jaml.nested_get(data, ["Description", "IDDataSet"])
+            info["path"] = p
+            info["type_experiment"] = jaml.nested_get(data, ["Description", "TypeExp"])
+            info["A1"] = az1[0]
+            info["Z1"] = az1[1]
+            info["A2"] = az2[0]
+            info["Z2"] = az2[1]
+            info["final_state"] = jaml.nested_get(data, ["Description", "FinalState"])
+            info["correlated_systematic_uncertainties"] = jaml.nested_get(
+                data, ["GridSpec", "NumberOfCorrSysErr"]
+            )
+            try:
+                grid_row_labels = [
+                    labels.data_yaml_to_py[c]
+                    for c in cast(
+                        list[str], jaml.nested_get(data, ["GridSpec", "TypeColumns"])
+                    )
+                ]
+            except KeyError as e:
+                e.add_note(f"Unknown field {e.args[0]} in the data file {p}")
+                raise e
+
+            points_list.extend(
+                {
+                    **info,
+                    **dict(zip(grid_row_labels, grid_row)),
+                }
+                for grid_row in cast(
+                    list[list[float]], jaml.nested_get(data, ["GridSpec", "Grid"])
+                )
+            )
+
+        self._points = pd.DataFrame.from_records(
+            data=points_list, columns=[*info.keys(), *labels.data_yaml_to_py.values()]
+        )
+
+        int_cols = [
+            "id_dataset",
+            "correlated_systematic_uncertainties",
+            "id_bin",
+        ]  # no A and Z here since they are sometimes non-integer
+        self._points[int_cols] = self._points[int_cols].astype("Int64", copy=False)
+
+        # add mid and err columns for binned variables, i.e. pT_mid and pT_err
+        for var in ("pT", "y"):
+            i = self._points.columns.get_loc(f"{var}_max")
+            assert isinstance(i, int)
+            self._points.insert(
+                i + 1,
+                f"{var}_mid",
+                (self._points[f"{var}_min"] + self._points[f"{var}_max"]) / 2,
+            )
+            self._points.insert(
+                i + 2,
+                f"{var}_err",
+                (self._points[f"{var}_max"] - self._points[f"{var}_min"]) / 2,
+            )
+
+        m_proton = 0.938
+
+        # calculate W2 if it is NaN
+        mask_dis = (
+            self._points["type_experiment"].isin(["DIS", "DISNEU"])
+            & self._points["W2"].isna()
+        )
+        self._points.loc[mask_dis, "W2"] = (
+            self._points.loc[mask_dis, "Q2"]
+            * (1.0 / self._points.loc[mask_dis, "x"] - 1.0)
+            + m_proton**2
+        )
+
+        mask_disdimu = (self._points["type_experiment"] == "DISDIMU") & self._points[
+            "W2"
+        ].isna()
+        self._points.loc[mask_disdimu, "W2"] = (
+            m_proton**2
+            * 2.0
+            * m_proton
+            * (1.0 - self._points.loc[mask_disdimu, "x"])
+            * self._points.loc[mask_disdimu, "y"]
+            * self._points.loc[mask_disdimu, "E_had"]
+        )
+
+        if self.cuts is not None:
+            self.apply(self.cuts)
 
     def _load_dataset_index(
         self, verbose: bool | int = False, settings: None = None
@@ -335,6 +531,50 @@ class Dataset:
             self._points.insert(
                 i + 2, "y_err", (self.points["y_max"] - self.points["y_min"]) / 2
             )
+
+        if not "W2" in self.points:
+            m_proton = 0.938
+
+            if (
+                self.type_experiment in ("DIS", "DISNEU")
+                and "x" in self.points
+                and "Q2" in self.points
+            ):
+
+                i = self.points.columns.get_loc("Q2")
+                if not isinstance(i, int):
+                    raise ValueError("multiple columns called 'Q2'")
+
+                self._points.insert(
+                    i + 1,
+                    "W2",
+                    self.points["Q2"] * (1.0 / self.points["x"] - 1.0) + m_proton**2,
+                )
+
+            elif (
+                self.type_experiment == "DISDIMU"
+                and "x" in self.points
+                and "y" in self.points
+                and "E_had" in self.points
+            ):
+
+                i = self.points.columns.get_loc("E_had")
+                if not isinstance(i, int):
+                    raise ValueError("multiple columns called 'E_had'")
+
+                self._points.insert(
+                    i + 1,
+                    "W2",
+                    m_proton**2
+                    + 2.0
+                    * m_proton
+                    * (1.0 - self.points["x"])
+                    * self.points["y"]
+                    * self.points["E_had"],
+                )
+
+        if self.cut is not None:
+            self._points = self._points[self.cut.accepts(self._points)]
 
         if not "unc_tot" in self._points.columns:
             errs = list(set(self.points.columns) & set(["unc_stat", "unc_sys"]))
