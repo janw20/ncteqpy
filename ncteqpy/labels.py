@@ -14,6 +14,9 @@ kinvars_yaml_to_py = {
     "RS": "sqrt_s",
     "X": "x",
     "Y": "y",
+    "Q2": "Q2",
+    "W2": "W2",
+    "EHAD": "E_had",
     "PT": "pT",
     "PTMIN": "pT_min",
     "PTMAX": "pT_max",
@@ -49,6 +52,7 @@ kinvars_py_to_tex = {
 theory_yaml_to_py = {
     "SIG": "sigma",
     "RSIG": "ratio_sigma",
+    "SIGIPT": "sigma_pT_integrated",
     "F2": "F2",
     "RF2": "ratio_F2",
     "APPLGRID": "applgrid",
@@ -67,6 +71,14 @@ uncertainties_yaml_to_py = {
     "SYSU": "unc_sys",
     "SYST": "unc_tot",
     "THEO": "unc_theo",
+    "EPS": "unc_eps", # ? e.g. in ccfrXmuNu3_791.yaml
+    "CORP": "unc_corp"  # ? e.g. in chorxsNb2_5947.yaml
+}
+
+data_yaml_to_py = {
+    **kinvars_yaml_to_py,
+    **theory_yaml_to_py,
+    **uncertainties_yaml_to_py,
 }
 
 parameters_cj15_py_to_tex = {
