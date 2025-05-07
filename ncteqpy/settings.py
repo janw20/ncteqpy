@@ -3,21 +3,33 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Iterable, cast
+from typing import Iterable, TypedDict, cast
 
-import ncteqpy.jaml as nc_jaml
+import ncteqpy.jaml as jaml
+from ncteqpy.cuts import (
+    Cut,
+    Cut_GreaterThan,
+    Cut_GreaterThanEqual,
+    Cut_LessThan,
+    Cut_LessThanEqual,
+    Cut_RelOp,
+    Cuts,
+)
 from ncteqpy.jaml import YAMLType
+from ncteqpy.kinematic_variables import label_to_kinvar
+from ncteqpy.labels import kinvars_yaml_to_py
 
 _SETTINGS_FILE_HEADER = (
     "# !! File is writable by ncteqpy (changing this line will make it non-writable) !!"
 )
 
 
-class Settings(nc_jaml.YAMLWrapper):
+class Settings(jaml.YAMLWrapper):
     _datasets: list[Path] | None = None
     _all_parameters: list[str] | None = None
     _open_parameters: list[str] | None = None
     _closed_parameters: list[str] | None = None
+    _cuts: Cuts | None = None
 
     write_path: os.PathLike[str]
 
@@ -78,7 +90,7 @@ class Settings(nc_jaml.YAMLWrapper):
         """
         if len(key) != 2:
             raise ValueError("Key must have length 2")
-        nc_jaml.nested_set(self.yaml_overwrites, key, value)
+        jaml.nested_set(self.yaml_overwrites, key, value)
 
     def add_yaml_comments(self, lines: int | Iterable[int]) -> None:
         """Add line numbers to `Settings.yaml_comments`, which will be either commented or uncommented when `Settings.write` is called.
@@ -197,13 +209,13 @@ class Settings(nc_jaml.YAMLWrapper):
                 current_tags = current_tags[:i_level]
                 current_tags.append(tag)
 
-            if len(current_tags) == 2 and nc_jaml.nested_in(
+            if len(current_tags) == 2 and jaml.nested_in(
                 self.yaml_overwrites, current_tags
             ):
                 val = line.removeprefix(leading_whitespace + tag + ":")
 
-                new_val = nc_jaml.to_str(
-                    nc_jaml.nested_get(self.yaml_overwrites, current_tags)
+                new_val = jaml.to_str(
+                    jaml.nested_get(self.yaml_overwrites, current_tags)
                 )
                 new_val = val.replace(val.strip(), new_val)
                 lines[i] = leading_whitespace + tag + ":" + new_val + comment
@@ -214,19 +226,74 @@ class Settings(nc_jaml.YAMLWrapper):
     @property
     def datasets(self) -> list[Path]:
         if self._datasets is None or self._yaml_changed():
-            pattern = nc_jaml.Pattern({"DataSets": {"DataFiles": None}})
+            pattern = jaml.Pattern({"DataSets": {"DataFiles": None}})
             yaml = self._load_yaml(pattern)
+
+            assert isinstance(yaml, dict)
 
             datasets_str = cast(
                 list[str],
-                nc_jaml.nested_get(
-                    yaml, ["DataSets", "DataFiles"], raise_keyerror=True
-                ),
+                jaml.nested_get(yaml, ["DataSets", "DataFiles"], raise_keyerror=True),
             )
 
             self._datasets = [Path(s) for s in datasets_str]
 
         return self._datasets
+
+    @property
+    def cuts(self) -> Cuts:
+        if self._cuts is None or self._yaml_changed():
+            pattern = jaml.Pattern({"Cuts": None})
+            yaml = self._load_yaml(pattern)
+
+            assert isinstance(yaml, dict)
+
+            yaml_to_cut: dict[str, type[Cut_RelOp]] = {
+                "MINCUT": Cut_GreaterThan,
+                "MAXCUT": Cut_LessThan,
+                "MINCUTEQ": Cut_GreaterThanEqual,
+                "MAXCUTEQ": Cut_LessThan,  # bug in ncteqpp-2.0
+            }
+
+            class ByType(TypedDict):
+                Type: str
+                Value: float
+                KinVar: str
+                Cut: str
+
+            by_type: dict[str, Cut] = {}
+
+            for cut_yaml in cast(dict[str, dict[str, list[ByType]]], yaml)["Cuts"][
+                "ByType"
+            ]:
+                cut = yaml_to_cut[cut_yaml["Cut"]](
+                    label_to_kinvar[kinvars_yaml_to_py[cut_yaml["KinVar"]]],
+                    cut_yaml["Value"],
+                )
+                t = cut_yaml["Type"]
+                by_type[t] = cut if t not in by_type else by_type[t] & cut
+
+            class ByID(TypedDict):
+                IDs: list[int]
+                Value: float
+                KinVar: str
+                Cut: str
+
+            by_id: dict[int, Cut] = {}
+
+            for cut_yaml in cast(dict[str, dict[str, list[ByID]]], yaml)["Cuts"][
+                "ByID"
+            ]:
+                cut = yaml_to_cut[cut_yaml["Cut"]](
+                    label_to_kinvar[kinvars_yaml_to_py[cut_yaml["KinVar"]]],
+                    cut_yaml["Value"],
+                )
+                for id in cut_yaml["IDs"]:
+                    by_id[id] = cut if id not in by_id else by_id[id] & cut
+
+            self._cuts = Cuts(by_type, by_id)
+
+        return self._cuts
 
     def _read_parameters(self) -> None:
         # read all lines inside the FitParams tag
@@ -290,6 +357,8 @@ class Settings(nc_jaml.YAMLWrapper):
         if self._all_parameters is None or self._yaml_changed():
             self._read_parameters()
 
+        assert self._all_parameters is not None
+
         return self._all_parameters
 
     @property
@@ -297,11 +366,15 @@ class Settings(nc_jaml.YAMLWrapper):
         if self._open_parameters is None or self._yaml_changed():
             self._read_parameters()
 
+        assert self._open_parameters is not None
+
         return self._open_parameters
 
     @property
     def closed_parameters(self) -> list[str]:
         if self._closed_parameters is None or self._yaml_changed():
             self._read_parameters()
+
+        assert self._closed_parameters is not None
 
         return self._closed_parameters
