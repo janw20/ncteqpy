@@ -21,6 +21,7 @@ def plot_scan_1d(
     profile_chi2_groups: pd.DataFrame | None = None,
     groups_labels: dict[str, str] | None = None,
     dof: int | None = None,
+    legend: bool = True,
     highlight_groups: str | list[str] | None = None,
     highlight_important_groups: int | None = None,
     kwargs_chi2_total: dict[str, Any] | None = None,
@@ -143,7 +144,8 @@ def plot_scan_1d(
         ax[i].set(xlabel=f"${parameters_cj15_py_to_tex[p]}$", ylabel=r"$\Delta \chi^2$")
         ax[i].grid()
 
-        ax[i].legend()
+        if legend:
+            ax[i].legend()
 
 
 def plot_scan_2d(
