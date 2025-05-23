@@ -18,8 +18,7 @@ def _all_equal(s: Sequence[Any]) -> bool:
 
 
 class ParameterScan(ABC, jaml.YAMLWrapper):
-
-    # lazy: bool = False
+    """Abstract base class for parameter scans. Subclasses must override `_load_ranges` and `_load_profile`, and should implement the properties `parameters_scanned` and `parameters_scanned_indices`"""
 
     _parameters_all: list[str] | None = None
     _parameters_all_indices: dict[str, int] | None = None
@@ -290,7 +289,7 @@ class ParameterScan1D(ParameterScan):
         param_names: list[str] = []
         ranges: list[list[float]] = []
         param_min: list[float] = []
-        for y in map(lambda x: x[1], yaml):
+        for _, y in yaml:
 
             for scan in cast(
                 list[dict[str, Any]],
@@ -479,6 +478,12 @@ class ParameterScan1D(ParameterScan):
         parameter: str | Sequence[str] | None = None,
         datasets: Datasets | None = None,
         data_groupby: str | None = None,
+        groups_labels: dict[str, str] | None = None,
+        highlight_groups: str | list[str] | None = None,
+        highlight_important_groups: int | None = None,
+        kwargs_chi2_total: dict[str, Any] | None = None,
+        kwargs_chi2_minimum: dict[str, Any] | None = None,
+        kwargs_chi2_groups: dict[str, Any] | list[dict[str, Any] | None] | None = None,
         **kwargs: Any,
     ) -> None:
 
@@ -506,7 +511,7 @@ class ParameterScan1D(ParameterScan):
                 .T
             )
             profile_chi2_groups.columns = pd.MultiIndex.from_tuples(
-                profile_chi2_groups.columns, names=["parameters", "type_experiment"]
+                profile_chi2_groups.columns, names=["parameters", data_groupby]
             )
 
             data_groups_labels = dict(
@@ -520,6 +525,9 @@ class ParameterScan1D(ParameterScan):
         minimum = self.minimum_params.copy()
         minimum["chi2"] = self.minimum_chi2
 
+        if data_groups_labels is not None and groups_labels is not None:
+            data_groups_labels = data_groups_labels | groups_labels
+
         plot_scan_1d(
             ax=ax,
             profile_params=self.profile_params,
@@ -528,6 +536,11 @@ class ParameterScan1D(ParameterScan):
             minimum=minimum,
             profile_chi2_groups=profile_chi2_groups,
             groups_labels=data_groups_labels,
+            highlight_groups=highlight_groups,
+            highlight_important_groups=highlight_important_groups,
+            kwargs_chi2_total=kwargs_chi2_total,
+            kwargs_chi2_minimum=kwargs_chi2_minimum,
+            kwargs_chi2_groups=kwargs_chi2_groups,
             **kwargs,
         )
 

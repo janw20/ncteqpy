@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from ncteqpy.labels import parameters_cj15_py_to_tex
+from ncteqpy.util import update_kwargs
 
 
 def plot_scan_1d(
@@ -20,7 +21,11 @@ def plot_scan_1d(
     profile_chi2_groups: pd.DataFrame | None = None,
     groups_labels: dict[str, str] | None = None,
     dof: int | None = None,
-    **kwargs: Any,
+    highlight_groups: str | list[str] | None = None,
+    highlight_important_groups: int | None = None,
+    kwargs_chi2_total: dict[str, Any] | None = None,
+    kwargs_chi2_minimum: dict[str, Any] | None = None,
+    kwargs_chi2_groups: dict[str, Any] | list[dict[str, Any] | None] | None = None,
 ) -> None:
 
     if isinstance(ax, plt.Axes):
@@ -44,30 +49,87 @@ def plot_scan_1d(
     for i, p in enumerate(parameter):
 
         if profile_chi2 is not None:
+
+            kwargs_default = {
+                "color": "black",
+                "label": "Total",
+                "marker": ".",
+                "zorder": 4,
+            }
+            kwargs = update_kwargs(kwargs_default, kwargs_chi2_total)
+
             ax[i].plot(
                 profile_params[p],
                 profile_chi2[p] - minimum["chi2"].iloc[0],
-                color="black",
-                label="Total",
-                marker=".",
-                zorder=3,
+                **kwargs,
             )
 
-        ax[i].plot(minimum[p], 0, "*", color="black", zorder=3)
+        kwargs_default = {"marker": "*", "color": "black", "zorder": 4}
+        kwargs = update_kwargs(kwargs_default, kwargs_chi2_minimum)
+
+        ax[i].plot(minimum[p], 0, **kwargs)
 
         if profile_chi2_groups is not None:
 
-            for g in profile_chi2_groups[p]:
-                # chi2 value at the minimum parameter
-                chi2_min = np.interp(
-                    minimum[p], profile_params[p], profile_chi2_groups[p, g]
+            # group -> chi2 value at the minimum parameter
+            chi2_min = pd.Series(
+                [
+                    np.interp(minimum[p], profile_params[p], profile_chi2_groups[p, g])[
+                        0
+                    ]
+                    for g in profile_chi2_groups[p]
+                ],
+                index=profile_chi2_groups[p].columns,
+            )
+
+            important: pd.Index = (
+                (
+                    (profile_chi2_groups[p] - chi2_min)
+                    .iloc[[0, -1]]
+                    .max(axis=0)
+                    .sort_values(ascending=False)
+                    .iloc[:highlight_important_groups]
+                    .index
                 )
+                if highlight_important_groups is not None
+                else pd.Index([])
+            )
+
+            if isinstance(highlight_groups, str):
+                highlight_groups = [highlight_groups]
+            elif highlight_groups is None:
+                highlight_groups = []
+
+            for j, g in enumerate(profile_chi2_groups[p]):
+                if (
+                    highlight_groups is not None
+                    or highlight_important_groups is not None
+                ):
+                    if g in highlight_groups or g in important:
+                        label = (
+                            groups_labels.get(g, g) if groups_labels is not None else g
+                        )
+                        color = None
+                        zorder = 3
+                    else:
+                        label = None
+                        color = "gray"
+                        zorder = None
+                else:
+                    label = groups_labels.get(g, g) if groups_labels is not None else g
+                    color = None
+                    zorder = None
+
+                kwargs_default = {
+                    "marker": ".",
+                    "label": label,
+                    "color": color,
+                    "zorder": zorder,
+                }
+                kwargs = update_kwargs(kwargs_default, kwargs_chi2_groups, j)
 
                 ax[i].plot(
-                    profile_params[p],
-                    profile_chi2_groups[p, g] - chi2_min,
-                    marker=".",
-                    label=groups_labels[g] if groups_labels is not None else None,
+                    profile_params[p], profile_chi2_groups[p, g] - chi2_min[g], **kwargs
                 )  # TODO: option to display data IDs?
 
         if dof is not None:
@@ -75,6 +137,8 @@ def plot_scan_1d(
                 "right", functions=(lambda x: x / dof, lambda x: x * dof)
             )
             ax2.set_ylabel(r"$\Delta \chi^2 \: / \: N_\text{d.o.f.}$")
+
+        ax[i].set_xlim(profile_params[p].min(), profile_params[p].max())
 
         ax[i].set(xlabel=f"${parameters_cj15_py_to_tex[p]}$", ylabel=r"$\Delta \chi^2$")
         ax[i].grid()
