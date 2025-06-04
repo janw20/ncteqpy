@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import yaml
-import yaml.parser
 
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
