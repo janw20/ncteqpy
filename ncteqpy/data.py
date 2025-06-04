@@ -354,7 +354,11 @@ class Datasets(jaml.YAMLWrapper):
             * self._points.loc[mask_disdimu, "E_had"]
         )
 
-        self._points["unc_tot"] = (self._points[["unc_stat", "unc_sys_uncorr"]]**2).sum(axis=1, skipna=True)**0.5  # FIXME: include unc_sys_corr
+        self._points["unc_tot"] = (
+            self._points[["unc_stat", "unc_sys_uncorr"]] ** 2
+        ).sum(
+            axis=1, skipna=True
+        ) ** 0.5  # FIXME: include unc_sys_corr
 
         if self.cuts is not None:
             self.apply(self.cuts)
