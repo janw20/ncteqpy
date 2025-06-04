@@ -610,8 +610,6 @@ class Dataset:
                 )
             ),
         )
-        if self.cut is not None:
-            self._points = self._points[self.cut.accepts(self._points)]
 
         if "pT_min" in self.points.columns and "pT_max" in self.points.columns:
             i = self.points.columns.get_loc("pT_max")
