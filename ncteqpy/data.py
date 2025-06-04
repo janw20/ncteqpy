@@ -366,96 +366,154 @@ class Datasets(jaml.YAMLWrapper):
     def _load_dataset_index(
         self, verbose: bool | int = False, settings: None = None
     ) -> None:
-        pickle_name = "dataset_index"
+        index_list = []
 
-        self._index = cast(pd.DataFrame, self._unpickle(pickle_name))
+        index_pattern = jaml.Pattern(
+            {
+                "Description": {
+                    "TypeExp": None,
+                    "FinalState": None,
+                    "IDDataSet": None,
+                    "AZValues1": None,
+                    "AZValues2": None,
+                },
+                "GridSpec": {
+                    "NumberOfCorrSysErr": None,
+                    "TypeTheory": None,
+                    "TypeUncertainties": None,
+                    "TypeKinVar": None,
+                    "Dim": None,
+                    # "Grid": None,
+                },
+            }
+        )
+        index_yaml = self._load_yaml(index_pattern)
 
-        if self._index is None:
-            index_list = []
+        assert isinstance(index_yaml, list)
 
-            index_pattern = jaml.Pattern(
+        for p, data in cast(list[tuple[Path, jaml.YAMLType]], index_yaml):
+            if not jaml.nested_in(data, ["Description", "IDDataSet"]):
+                continue
+
+            # we have to deal with A and Z first because we can't index None
+            az1 = (
+                az
+                if isinstance(
+                    az := jaml.nested_get(data, ["Description", "AZValues1"]), list
+                )
+                else (None, None)
+            )
+            az2 = (
+                az
+                if isinstance(
+                    az := jaml.nested_get(data, ["Description", "AZValues2"]), list
+                )
+                else (None, None)
+            )
+            # if a field is not in the data file we set it to None in the dataframe
+            index_list.append(
                 {
-                    "Description": {
-                        "TypeExp": None,
-                        "FinalState": None,
-                        "IDDataSet": None,
-                        "AZValues1": None,
-                        "AZValues2": None,
-                    },
-                    "GridSpec": {
-                        "NumberOfCorrSysErr": None,
-                        "TypeTheory": None,
-                        "TypeUncertainties": None,
-                        "TypeKinVar": None,
-                        "Dim": None,
-                        # "Grid": None,
-                    },
+                    "id_dataset": jaml.nested_get(data, ["Description", "IDDataSet"]),
+                    "path": p,
+                    "type_experiment": jaml.nested_get(
+                        data, ["Description", "TypeExp"]
+                    ),
+                    "A1": az1[0],
+                    "Z1": az1[1],
+                    "A2": az2[0],
+                    "Z2": az2[1],
+                    "final_state": jaml.nested_get(data, ["Description", "FinalState"]),
+                    "correlated_systematic_uncertainties": jaml.nested_get(
+                        data, ["GridSpec", "NumberOfCorrSysErr"]
+                    ),
+                    "kinematic_variables": jaml.nested_get(
+                        data, ["GridSpec", "TypeKinVar"]
+                    ),
+                    "type_theory": jaml.nested_get(data, ["GridSpec", "TypeTheory"]),
+                    "types_uncertainties": jaml.nested_get(
+                        data, ["GridSpec", "TypeUncertainties"]
+                    ),
+                    "num_points": jaml.nested_get(data, ["GridSpec", "Dim", 0]),
+                    # "grid": np.array(jaml.nested_get(data, ["GridSpec", "Grid"])),
                 }
             )
-            index_yaml = self._load_yaml(index_pattern)
+        self._index = pd.DataFrame.from_records(data=index_list)
+        int_cols = [
+            "id_dataset",
+            "correlated_systematic_uncertainties",
+        ]  # no A and Z here since they are sometimes non-integer
+        self._index[int_cols] = self._index[int_cols].astype("Int64", copy=False)
+        self._index.sort_values(by="path", inplace=True)
 
-            assert isinstance(index_yaml, list)
+        # add A_lighter, Z_lighter, A_heavier, Z_heavier columns (lighter and heavier nucleus out of the 2, ignoring nan)
+        i = cast(int, self._index.columns.get_loc("Z2"))
 
-            for p, data in cast(list[tuple[Path, jaml.YAMLType]], index_yaml):
-                if not jaml.nested_in(data, ["Description", "IDDataSet"]):
-                    continue
+        idx_lighter, _ = pd.factorize(
+            self._index[["A1", "A2"]].idxmin(axis=1), sort=True
+        )
+        self._index.insert(
+            i + 1,
+            "A_lighter",
+            self._index[["A1", "A2"]].to_numpy()[
+                np.arange(len(self._index)), idx_lighter
+            ],
+        )
+        self._index.insert(
+            i + 2,
+            "Z_lighter",
+            self._index[["Z1", "Z2"]].to_numpy()[
+                np.arange(len(self._index)), idx_lighter
+            ],
+        )
 
-                # we have to deal with A and Z first because we can't index None
-                az1 = (
-                    az
-                    if isinstance(
-                        az := jaml.nested_get(data, ["Description", "AZValues1"]), list
-                    )
-                    else (None, None)
-                )
-                az2 = (
-                    az
-                    if isinstance(
-                        az := jaml.nested_get(data, ["Description", "AZValues2"]), list
-                    )
-                    else (None, None)
-                )
-                # if a field is not in the data file we set it to None in the dataframe
-                index_list.append(
-                    {
-                        "id_dataset": jaml.nested_get(
-                            data, ["Description", "IDDataSet"]
-                        ),
-                        "path": p,
-                        "type_experiment": jaml.nested_get(
-                            data, ["Description", "TypeExp"]
-                        ),
-                        "A1": az1[0],
-                        "Z1": az1[1],
-                        "A2": az2[0],
-                        "Z2": az2[1],
-                        "final_state": jaml.nested_get(
-                            data, ["Description", "FinalState"]
-                        ),
-                        "correlated_systematic_uncertainties": jaml.nested_get(
-                            data, ["GridSpec", "NumberOfCorrSysErr"]
-                        ),
-                        "kinematic_variables": jaml.nested_get(
-                            data, ["GridSpec", "TypeKinVar"]
-                        ),
-                        "type_theory": jaml.nested_get(
-                            data, ["GridSpec", "TypeTheory"]
-                        ),
-                        "types_uncertainties": jaml.nested_get(
-                            data, ["GridSpec", "TypeUncertainties"]
-                        ),
-                        "num_points": jaml.nested_get(data, ["GridSpec", "Dim", 0]),
-                        # "grid": np.array(jaml.nested_get(data, ["GridSpec", "Grid"])),
-                    }
-                )
-            self._index = pd.DataFrame.from_records(data=index_list)
-            int_cols = [
-                "id_dataset",
-                "correlated_systematic_uncertainties",
-            ]  # no A and Z here since they are sometimes non-integer
-            self._index[int_cols] = self._index[int_cols].astype("Int64", copy=False)
-            self._index.sort_values(by="path", inplace=True)
-            self._pickle(self._index, pickle_name)
+        idx_heavier, _ = pd.factorize(
+            self._index[["A1", "A2"]].idxmax(axis=1), sort=True
+        )
+        self._index.insert(
+            i + 3,
+            "A_heavier",
+            self._index[["A1", "A2"]].to_numpy()[
+                np.arange(len(self._index)), idx_heavier
+            ],
+        )
+        self._index.insert(
+            i + 4,
+            "Z_heavier",
+            self._index[["Z1", "Z2"]].to_numpy()[
+                np.arange(len(self._index)), idx_heavier
+            ],
+        )
+
+    def plot_kinematic_coverage(
+        self,
+        ax: plt.Axes,
+        kinematic_variables: tuple[str, str] = ("x", "Q2"),
+        filter_query: str | None = None,
+        groupby: str | None = None,
+    ) -> None:
+
+        filtered_index = (
+            self.index.query(filter_query) if filter_query is not None else self.index
+        )
+        points = [
+            Dataset(
+                p[1]["path"],
+                (
+                    (self.cuts.get(id_dataset=p[1]["id_dataset"]))
+                    if self.cuts is not None
+                    else None
+                ),
+            ).points
+            for p in filtered_index.iterrows()
+        ]
+
+        plot_kinematic_coverage(
+            ax=ax,
+            points=points,
+            datasets_index=filtered_index,
+            kinematic_variables=kinematic_variables,
+            groupby=groupby,
+        )
 
 
 class Dataset:
