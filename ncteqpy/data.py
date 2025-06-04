@@ -360,6 +360,46 @@ class Datasets(jaml.YAMLWrapper):
             axis=1, skipna=True
         ) ** 0.5  # FIXME: include unc_sys_corr
 
+        # add A_lighter, Z_lighter, A_heavier, Z_heavier columns (lighter and heavier nucleus out of the 2, ignoring nan)
+        i = cast(int, self._points.columns.get_loc("Z2"))
+
+        idx_lighter, _ = pd.factorize(
+            self._points[["A1", "A2"]].idxmin(axis=1), sort=True
+        )
+        self._points.insert(
+            i + 1,
+            "A_lighter",
+            self._points[["A1", "A2"]].to_numpy()[
+                np.arange(len(self._points)), idx_lighter
+            ],
+        )
+        self._points.insert(
+            i + 2,
+            "Z_lighter",
+            self._points[["Z1", "Z2"]].to_numpy()[
+                np.arange(len(self._points)), idx_lighter
+            ],
+        )
+
+        idx_heavier, _ = pd.factorize(
+            self._points[["A1", "A2"]].idxmax(axis=1), sort=True
+        )
+        self._points.insert(
+            i + 3,
+            "A_heavier",
+            self._points[["A1", "A2"]].to_numpy()[
+                np.arange(len(self._points)), idx_heavier
+            ],
+        )
+        self._points.insert(
+            i + 4,
+            "Z_heavier",
+            self._points[["Z1", "Z2"]].to_numpy()[
+                np.arange(len(self._points)), idx_heavier
+            ],
+        )
+
+        # apply cuts
         if self.cuts is not None:
             self.apply(self.cuts)
 
