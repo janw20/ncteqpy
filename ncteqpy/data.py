@@ -347,7 +347,7 @@ class Datasets(jaml.YAMLWrapper):
         ].isna()
         self._points.loc[mask_disdimu, "W2"] = (
             m_proton**2
-            * 2.0
+            + 2.0
             * m_proton
             * (1.0 - self._points.loc[mask_disdimu, "x"])
             * self._points.loc[mask_disdimu, "y"]
