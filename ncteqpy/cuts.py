@@ -64,13 +64,20 @@ class Cuts:
         """
 
         return points.apply(
-                lambda row: self.get(
-                    id_dataset=row["id_dataset"],
-                    type_experiment=row["type_experiment"],
-                ).accepts(row),
-                # apply,
-                axis=1,
-            )
+            lambda row: self.get(
+                id_dataset=row["id_dataset"],
+                type_experiment=row["type_experiment"],
+            ).accepts(row),
+            # apply,
+            axis=1,
+        )
+    
+    def relations(self) -> set[Cut_RelOp]:
+        """Returns all the relational operations appearing in the cuts."""
+        return set.union(
+            *(cut.relations() for cut in self.by_type_experiment.values()),
+            *(cut.relations() for cut in self.by_dataset_id.values()),
+        )
 
 
 class Cuttable(ABC):
@@ -181,6 +188,11 @@ class Cut(ABC):
         """Returns as a set the variables appearing in the cut."""
         ...
 
+    @abstractmethod
+    def relations(self) -> set[Cut_RelOp]:
+        """Returns as a set the relational operations appearing in the cut."""
+        ...
+
     def __and__(self, other: Cut) -> Cut_And:
         return Cut_And(self, other)
 
@@ -205,6 +217,10 @@ class Cut_RelOp(Cut, ABC):
     def variables(self) -> set[Cuttable]:
         return {self.variable}
 
+    @override
+    def relations(self) -> set[Cut_RelOp]:
+        return {self}
+
 
 @dataclass(frozen=True)
 class Cut_UnLogOp(Cut, ABC):
@@ -215,6 +231,10 @@ class Cut_UnLogOp(Cut, ABC):
     @override
     def variables(self) -> set[Cuttable]:
         return self.cut.variables()
+
+    @override
+    def relations(self) -> set[Cut_RelOp]:
+        return self.cut.relations()
 
 
 @dataclass(frozen=True)
@@ -227,6 +247,10 @@ class Cut_BinLogOp(Cut, ABC):
     @override
     def variables(self) -> set[Cuttable]:
         return self.cut1.variables() | self.cut2.variables()
+
+    @override
+    def relations(self) -> set[Cut_RelOp]:
+        return self.cut1.relations() | self.cut2.relations()
 
 
 @dataclass(frozen=True)
@@ -267,6 +291,10 @@ class Cut_True(Cut):
     def variables(self) -> set[Cuttable]:
         return set()
 
+    @override
+    def relations(self) -> set[Cut_RelOp]:
+        return set()
+
 
 @dataclass(frozen=True)
 class Cut_False(Cut):
@@ -301,6 +329,14 @@ class Cut_False(Cut):
             return pd.Series(value.shape[0] * [False])
         else:
             return False
+
+    @override
+    def variables(self) -> set[Cuttable]:
+        return set()
+
+    @override
+    def relations(self) -> set[Cut_RelOp]:
+        return set()
 
 
 @dataclass(frozen=True)
