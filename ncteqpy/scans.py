@@ -848,3 +848,510 @@ class ParameterScan2D(ParameterScan):
             tolerance=self.target_delta_chi2,
             **kwargs,
         )
+
+class EVScan(ABC, jaml.YAMLWrapper):
+    """Abstract base class for eigenvector scans. Subclasses must override `_load_ranges` and `_load_profile`, and should implement the properties `evs_scanned`"""
+
+    _ev_all: list[str] | None = None
+    _ev_all_indices: dict[str, int] | None = None
+
+    _target_delta_chi2: float | None = None
+    _margin: float | None = None
+    _num_steps: int | None = None
+
+    _ev_range: pd.DataFrame | None = None
+
+    _profile_ev: pd.DataFrame | None = None
+    _profile_chi2: pd.DataFrame | None = None
+    _profile_chi2_per_data: pd.DataFrame | None = None
+
+    #_minimum_params: pd.DataFrame | None = None
+    _minimum_chi2: float | None = None
+
+    def __init__(
+        self,
+        paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
+        cache_path: str | os.PathLike[str] = "./.jaml_cache",
+        retain_yaml: bool = False,
+    ) -> None:
+        super().__init__(paths, cache_path, retain_yaml)
+
+    def _load_params(self) -> None:
+        """Initialize `_parameters_names` and `_parameters_indices` by reading `Chi2Fcn: IndexOfInputParams` and `Chi2Fcn: ParamIndices`"""
+
+        pattern = jaml.Pattern(
+            {"Chi2Fcn": {"IndexOfInputParams": None, "ParamIndices": None}}
+        )
+        yaml = cast(
+            dict[str, jaml.YAMLType] | list[tuple[Path, dict[str, jaml.YAMLType]]],
+            self._load_yaml(pattern),
+        )
+
+        if not isinstance(yaml, list):
+            yaml = [(Path(), yaml)]
+
+        # read parameter names and indices
+        index_of_input_params: list[list[int]] = []
+        param_indices: list[dict[str, int]] = []
+        for y in map(lambda x: x[1], yaml):
+            index_of_input_params.append(
+                cast(list[int], jaml.nested_get(y, ["Chi2Fcn", "IndexOfInputParams"]))
+            )
+            param_indices.append(
+                cast(dict[str, int], jaml.nested_get(y, ["Chi2Fcn", "ParamIndices"]))
+            )
+
+        # check that all files have the same parameter names and indices
+        if not _all_equal(index_of_input_params) or not _all_equal(param_indices):
+            raise ValueError(
+                "Incompatible scans: All files must have the same parameter names and indices"
+            )
+
+        # order the parameter name to parameter index mapping by the index (dicts preserve ordering in Python 3.7+)
+        self._parameters_all_indices = {
+            p: i_p
+            for i in index_of_input_params[0]
+            for p, i_p in param_indices[0].items()
+            if i_p == i
+        }
+        self._parameters_all = list(self._parameters_all_indices.keys())
+
+    def _load_scan_info(self) -> None:
+        """Initialize `_target_delta_chi2`, `_margin`, `_num_steps`, and `_minimum_chi2`"""
+
+        pattern = jaml.Pattern(
+            {
+                "Scans": {
+                    "targetDeltaChi2": None,
+                    "rangeMargin": None,
+                    "numberOfSteps": None,
+                    "Chi2AtMinimum": None,
+                }
+            }
+        )
+
+        yaml = cast(
+            dict[str, jaml.YAMLType] | list[tuple[Path, dict[str, jaml.YAMLType]]],
+            self._load_yaml(pattern),
+        )
+
+        if not isinstance(yaml, list):
+            yaml = [(Path(), yaml)]
+
+        target_delta_chi2: list[float] = []
+        margin: list[float] = []
+        num_steps: list[int] = []
+        min_chi2: list[float] = []
+        for y in map(lambda x: x[1], yaml):
+            target_delta_chi2.append(
+                cast(float, jaml.nested_get(y, ["Scans", "targetDeltaChi2"]))
+            )
+            margin.append(cast(float, jaml.nested_get(y, ["Scans", "rangeMargin"])))
+            num_steps.append(cast(int, jaml.nested_get(y, ["Scans", "numberOfSteps"])))
+            min_chi2.append(cast(float, jaml.nested_get(y, ["Scans", "Chi2AtMinimum"])))
+
+        # check that all files have the same values
+        # TODO: support multiple values per parameter?
+        if (
+            not _all_equal(target_delta_chi2)
+            or not _all_equal(margin)
+            or not _all_equal(num_steps)
+            or not _all_equal(min_chi2)
+        ):
+            raise ValueError(
+                "Incompatible scans: All files must have the same targetDeltaChi2, rangeMargin, numberOfSteps and chi2AtMinimum"
+            )
+
+        self._target_delta_chi2 = target_delta_chi2[0]
+        self._margin = margin[0]
+        self._num_steps = num_steps[0]
+        self._minimum_chi2 = min_chi2[0]
+
+    @abstractmethod
+    def _load_ranges(self) -> None:
+        pass
+
+    @abstractmethod
+    def _load_profile(self) -> None:
+        pass
+
+    @property
+    def parameters_all(self) -> list[str]:
+        if self._parameters_all is None or self._yaml_changed():
+            self._load_params()
+
+        assert self._parameters_all is not None
+
+        return self._parameters_all
+
+    @property
+    def parameters_all_indices(self) -> dict[str, int]:
+        if self._parameters_all_indices is None or self._yaml_changed():
+            self._load_params()
+
+        assert self._parameters_all_indices is not None
+
+        return self._parameters_all_indices
+
+    @property
+    def target_delta_chi2(self) -> float:
+        if self._target_delta_chi2 is None or self._yaml_changed():
+            self._load_scan_info()
+
+        assert self._target_delta_chi2 is not None
+
+        return self._target_delta_chi2
+
+    @property
+    def margin(self) -> float:
+        if self._margin is None or self._yaml_changed():
+            self._load_scan_info()
+
+        assert self._margin is not None
+
+        return self._margin
+
+    @property
+    def num_steps(self) -> int:
+        if self._num_steps is None or self._yaml_changed():
+            self._load_scan_info()
+
+        assert self._num_steps is not None
+
+        return self._num_steps
+
+    @property
+    def minimum_chi2(self) -> float:
+        if self._minimum_chi2 is None or self._yaml_changed():
+            self._load_scan_info()
+
+        assert self._minimum_chi2 is not None
+
+        return self._minimum_chi2
+
+    @property
+    def minimum_params(self) -> pd.DataFrame:
+        if self._minimum_params is None or self._yaml_changed():
+            self._load_ranges()
+
+        assert self._minimum_params is not None
+
+        return self._minimum_params
+
+    @property
+    def parameters_range(self) -> pd.DataFrame:
+        if self._parameters_range is None or self._yaml_changed():
+            self._load_ranges()
+
+        assert self._parameters_range is not None
+
+        return self._parameters_range
+
+    @property
+    def profile_params(self) -> pd.DataFrame:
+        if self._profile_params is None or self._yaml_changed():
+            self._load_profile()
+
+        assert self._profile_params is not None
+
+        return self._profile_params
+
+    @property
+    def profile_chi2(self) -> pd.DataFrame:
+        if self._profile_chi2 is None or self._yaml_changed():
+            self._load_profile()
+
+        assert self._profile_chi2 is not None
+
+        return self._profile_chi2
+
+    @property
+    def profile_chi2_per_data(self) -> pd.DataFrame:
+        if self._profile_chi2_per_data is None or self._yaml_changed():
+            self._load_profile()
+
+        assert self._profile_chi2_per_data is not None
+
+        return self._profile_chi2_per_data
+    
+
+class EVScan1D(EVScan):
+
+    _evs_scanned: list[int] | None = None
+
+    _datasets: set[int] | None = None
+
+    def __init__(
+        self,
+        paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
+        cache_path: str | os.PathLike[str] = "./.jaml_cache",
+        retain_yaml: bool = False,
+    ) -> None:
+        super().__init__(paths, cache_path, retain_yaml)
+
+    @override
+    def _load_ranges(self) -> None:
+        """Initialize `_evs_scanned`, `_evs_scanned_indices` and `_evs_range`"""
+
+        pattern = jaml.Pattern(
+            {
+                "Scans": {
+                    "EVScans": [
+                        {
+                            "evIndex": None,
+                            "negDirBound": None,
+                            "posDirBound": None,
+                            "posDirStep": None,
+                            "negDirStep": None,
+                            "zMax": None,
+                        }
+                    ]
+                }
+            }
+        )
+        yaml = cast(
+            dict[str, jaml.YAMLType] | list[tuple[Path, dict[str, jaml.YAMLType]]],
+            self._load_yaml(pattern),
+        )
+
+        if not isinstance(yaml, list):
+            yaml = [(Path(), yaml)]
+
+        ev_ids: list[int] = []
+        ranges: list[list[float]] = []
+
+        for _, y in yaml:
+
+            for scan in cast(
+                list[dict[str, Any]],
+                jaml.nested_get(y, ["Scans", "EVScans"]),
+            ):
+                ev_ids_i = cast(int, scan["evIndex"])
+                ranges_upper_i = cast(float, scan["posDirBound"])
+                ranges_lower_i = cast(float, scan["negDirBound"])
+
+
+                ev_ids.append(ev_ids_i)
+                ranges.append([ranges_lower_i, ranges_upper_i])
+
+
+        assert _all_equal(
+            [
+                len(ev_ids),
+                len(ranges),
+            ]
+        )
+
+        for i in ev_ids:
+            # check for duplicates
+            if ev_ids.count(i) > 1:
+                raise ValueError(f"Duplicate eigenvector (index {i})")
+
+        # sort the columns by the parameter indices
+        ev_ids, ranges = zip(
+            *sorted(
+                zip(ev_ids, ranges),
+                key=lambda x: x[0],
+            )
+        )
+
+        self._evs_scanned = list(ev_ids)
+        self._parameters_range = pd.DataFrame(np.array(ranges).T, columns=ev_ids)
+
+    @property
+    def evs_scanned(self) -> list[str]:
+        if self._evs_scanned is None or self._yaml_changed():
+            self._load_ranges()
+
+        assert self._evs_scanned is not None
+
+        return self._evs_scanned
+
+    @override
+    def _load_profile(self) -> None:
+        """Initialize `_profile_evs`, `_profile_chi2` and `_profile_chi2_per_data`"""
+
+        pattern = jaml.Pattern(
+            {
+                "Scans": {
+                    "EVScans": [
+                        {
+                            "profile": None,
+                            "snapshots": [
+                                {
+                                    "par": None,
+                                    "outputPerPointBreakdown": None,
+                                    "outputPerDataBreakdown": None,
+                                    "chi2Value": None,
+                                    "perDataBreakdown": None,
+                                }
+                            ],
+                        }
+                    ],
+                }
+            }
+        )
+
+        yaml = cast(
+            dict[str, jaml.YAMLType] | list[tuple[Path, dict[str, jaml.YAMLType]]],
+            self._load_yaml(pattern),
+        )
+
+        if not isinstance(yaml, list):
+            yaml = [(Path(), yaml)]
+
+        evs: list[str] = []
+        datasets: list[list[int]] = []
+        profile_evs: list[list[float]] = []
+        profile_chi2: list[list[float]] = []
+        profile_chi2_per_data: list[list[list[float]]] = []
+        for y in map(lambda x: x[1], yaml):
+
+            for scan in cast(
+                list[dict[str, Any]],
+                jaml.nested_get(y, ["Scans", "EVScans"]),
+            ):
+
+                profile_evs.append(
+                    [x[0] for x in cast(list[list[float]], scan["profile"])]
+                )
+                profile_chi2.append(
+                    [x[1] for x in cast(list[list[float]], scan["profile"])]
+                )
+                evs.append(scan["evIndex"])
+                snapshots_per_data: list[list[float]] = []
+                for snapshot in cast(
+                    list[dict[str, Any]],
+                    scan["snapshots"],
+                ):
+                    if cast(bool, snapshot["outputPerDataBreakdown"]):
+                        datasets.append(
+                            list(
+                                cast(
+                                    dict[int, float], snapshot["perDataBreakdown"]
+                                ).keys()
+                            )
+                        )
+                        snapshots_per_data.append(
+                            list(
+                                cast(
+                                    dict[int, float], snapshot["perDataBreakdown"]
+                                ).values()
+                            )
+                        )
+
+                # transpose snapshots_per_data before appending to profile_chi2_per_data
+                profile_chi2_per_data.append(list(map(list, zip(*snapshots_per_data))))
+
+        self._datasets = set(y for x in datasets for y in x)
+
+        self._profile_evs = pd.DataFrame(
+            np.array(profile_evs).T ,
+            columns=pd.Index(evs, name="eigenvector"),
+        )
+        self._profile_chi2 = pd.DataFrame(
+            np.array(profile_chi2).T, columns=pd.Index(evs, name="eigenvector")
+        )
+        self._profile_chi2_per_data = pd.DataFrame(
+            np.array([y for x in profile_chi2_per_data for y in x]).T,
+            columns=pd.MultiIndex.from_tuples(
+                [(p, d) for p, ds in zip(evs, datasets) for d in ds],
+                names=("eigenvector", "id_dataset"),
+            ),
+        )
+
+    @property
+    def datasets(self) -> set[int]:
+        if self._datasets is None or self._yaml_changed():
+            self._load_profile()
+
+        assert (
+            self._datasets is not None
+        )  # TODO: may be None if no per-data breakdown was loaded
+
+        return self._datasets
+
+    @property
+    def profile_chi2_per_data(self) -> pd.DataFrame:
+        if self._profile_chi2_per_data is None or self._yaml_changed():
+            self._load_profile()
+
+        assert (
+            self._profile_chi2_per_data is not None
+        )  # TODO: may be None if no per-data breakdown was loaded
+
+        return self._profile_chi2_per_data
+
+    def plot(
+        self,
+        ax: plt.Axes | Sequence[plt.Axes],
+        parameter: str | Sequence[str] | None = None,
+        datasets: Datasets | None = None,
+        data_groupby: str | None = None,
+        groups_labels: dict[str, str] | None = None,
+        highlight_groups: str | list[str] | None = None,
+        highlight_important_groups: int | None = None,
+        legend: bool = True,
+        kwargs_chi2_total: dict[str, Any] | None = None,
+        kwargs_chi2_minimum: dict[str, Any] | None = None,
+        kwargs_chi2_groups: dict[str, Any] | list[dict[str, Any] | None] | None = None,
+        **kwargs: Any,
+    ) -> None:
+
+        if data_groupby is not None:
+            if self.profile_chi2_per_data is None:
+                raise ValueError(
+                    "Grouping data not available since no per-data breakdown was loaded"
+                )
+
+            if datasets is None:
+                raise ValueError("Grouping data requires passing `datasets`")
+
+            # construct dataset grouper as pd.Series with index "id_dataset" and values `data_groupby`
+            # TODO: Better treatment of datasets with the same ID but different values for `data_groupby`
+            grouper = (
+                datasets.index[["id_dataset", data_groupby]]
+                .drop_duplicates()
+                .set_index("id_dataset")[data_groupby]
+            )
+
+            # group profile_chi2_per_data by the grouper and sum the chi2 values of the groups
+            profile_chi2_groups = (
+                self.profile_chi2_per_data.T.groupby(lambda x: (x[0], grouper[x[1]]))
+                .sum()
+                .T
+            )
+            profile_chi2_groups.columns = pd.MultiIndex.from_tuples(
+                profile_chi2_groups.columns, names=["eigenvectors", data_groupby]
+            )
+
+            data_groups_labels = dict(
+                zip(datasets.index[data_groupby], datasets.index[data_groupby].map(str))
+            )
+
+        else:
+            profile_chi2_groups = None
+            data_groups_labels = None
+
+        minimum = self.minimum_params.copy()
+        minimum["chi2"] = self.minimum_chi2
+
+        if data_groups_labels is not None and groups_labels is not None:
+            data_groups_labels = data_groups_labels | groups_labels
+
+        plot_scan_1d(
+            ax=ax,
+            profile_params=self.profile_params,
+            profile_chi2=self.profile_chi2,
+            parameter=parameter,
+            minimum=minimum,
+            profile_chi2_groups=profile_chi2_groups,
+            groups_labels=data_groups_labels,
+            legend=legend,
+            highlight_groups=highlight_groups,
+            highlight_important_groups=highlight_important_groups,
+            kwargs_chi2_total=kwargs_chi2_total,
+            kwargs_chi2_minimum=kwargs_chi2_minimum,
+            kwargs_chi2_groups=kwargs_chi2_groups,
+            **kwargs,
+        )
