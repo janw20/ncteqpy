@@ -1573,7 +1573,7 @@ class EVScan2D(EVScan):
                 profile_evs.append(profile_evs_i)
                 profile_chi2.append(profile_chi2_i)
         assert _all_equal([len(ev_ids),  len(profile_chi2)])
-        self._evs_scanned = list(ev_ids)
+        self._evs_scanned = ev_ids
         # sort the columns by the parameter indices
         #ev_ids,  profile_chi2 = zip(
         #    *sorted(
@@ -1582,9 +1582,9 @@ class EVScan2D(EVScan):
         #    )
         #)
         self._profile_evs =pd.DataFrame(
-            np.array([y for x in profile_evs for y in x[0]]),
+            [list(np.array([y[i] for x in profile_evs for y in x[::2]]).flatten()) for i in range(len(profile_evs[0][0]))],
             columns=pd.MultiIndex.from_tuples(
-                [(p1, p2, i) for p1, p2 in self._evs_scanned for i in range(1,3)],
+                [(p1, p2, i) for p1, p2 in ev_ids for i in range(1,3)],
                 names=("EV1", "EV2", "parameter_index"),
             ),
         )
@@ -1619,7 +1619,7 @@ class EVScan2D(EVScan):
     def plot(
         self,
         ax: plt.Axes | Sequence[plt.Axes],
-        parameters: tuple[str, str] | list[tuple[str, str]] | None = None,
+        eigenvectors: tuple[int, int] | list[tuple[int, int]] | None = None,
         norm_target:float | None=None,
         **kwargs: Any,
     ) -> None:
@@ -1630,7 +1630,7 @@ class EVScan2D(EVScan):
             ax=ax,
             profile_evs=self.profile_evs,
             profile_chi2=self.profile_chi2,
-            parameters=parameters,
+            eigenvectors=eigenvectors,
             modus="EV",
             minimum=minimum,
             tolerance=self.target_delta_chi2,

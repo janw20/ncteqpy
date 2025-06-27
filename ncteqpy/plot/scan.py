@@ -292,6 +292,7 @@ def plot_scan_2d(
                     profile_params.columns.get_level_values(1),
                 )
             )
+            
         elif isinstance(parameters, tuple):
             parameters = [parameters]
 
@@ -368,13 +369,14 @@ def plot_scan_2d(
                     profile_evs.columns.get_level_values(0),
                     profile_evs.columns.get_level_values(1),
                 )
-            )
+            )[::2]
+            
+            
         elif isinstance(eigenvectors, tuple):
             eigenvectors = [eigenvectors]
-
         if isinstance(ax, plt.Axes):
             ax = [ax]
-        elif len(ax) != len(eigenvectors):
+        if len(ax) != len(eigenvectors):
             raise ValueError(
                 "The number of axes must be equal to the number of parameter pairs."
             )
