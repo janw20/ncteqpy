@@ -15,7 +15,7 @@ from ncteqpy.kinematic_variables import (
     Y,
 )
 from ncteqpy.run import Runs
-from ncteqpy.scans import ParameterScan1D, ParameterScan2D
+from ncteqpy.scans import ParameterScan1D, ParameterScan2D, EVScan1D, EVScan2D
 from ncteqpy.settings import Settings
 
 # otherwise mypy complains with no-implicit-reexport
@@ -29,6 +29,8 @@ __all__ = [
     "Hessian",
     "ParameterScan1D",
     "ParameterScan2D",
+    "EVScan1D",
+    "EVScan2D",
     "Runs",
     "Settings",
     "PT",
