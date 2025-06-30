@@ -1621,6 +1621,10 @@ class EVScan2D(EVScan):
         ax: plt.Axes | Sequence[plt.Axes],
         eigenvectors: tuple[int, int] | list[tuple[int, int]] | None = None,
         norm_target:float | None=None,
+        draw_contour:bool= True,
+        plot_minimum:bool= True,
+        levels:list |None =None,
+        cbar_scale: Literal["linear", "log"]="linear",
         **kwargs: Any,
     ) -> None:
         
@@ -1635,5 +1639,9 @@ class EVScan2D(EVScan):
             minimum=minimum,
             tolerance=self.target_delta_chi2,
             norm_target=  norm_target,
+            draw_contour=draw_contour,
+            levels=levels,
+            plot_minimum=plot_minimum,
+            cbar_scale=cbar_scale,
             **kwargs,
         )

@@ -281,6 +281,10 @@ def plot_scan_2d(
     eigenvectors: tuple[int, int] | list[tuple[int, int]] | None = None,
     tolerance: float | None = None,
     norm_target: float | None =None,
+    draw_contour: bool =True,
+    plot_minimum:bool=True,
+    levels:list |None =None,
+    cbar_scale: Literal["linear", "log"]="linear",
     **kwargs: Any,
 ) -> None:
 
@@ -355,7 +359,8 @@ def plot_scan_2d(
                 )
                 ax_i.clabel(c, c.levels)  # pyright: ignore[reportAttributeAccessIssue]
 
-            ax_i.plot(minimum[p[0]], minimum[p[1]], "*", color="black")
+            if plot_minimum:
+                ax_i.plot(minimum[p[0]], minimum[p[1]], "*", color="black")
 
             ax_i.set(
                 xlabel=f"${parameters_cj15_py_to_tex[p[0]]}$",
@@ -395,10 +400,16 @@ def plot_scan_2d(
             ax_i.set_adjustable("box")
             ax_i.set_box_aspect(1)
 
-            if not norm_target:
-                norm = mcolors.TwoSlopeNorm(tolerance) if tolerance is not None else None
-            else:
-                norm = mcolors.TwoSlopeNorm(norm_target)
+            if cbar_scale=="linear":
+                if not norm_target:
+                    norm = mcolors.TwoSlopeNorm(tolerance) if tolerance is not None else None
+                else:
+                    norm = mcolors.TwoSlopeNorm(norm_target)
+            if cbar_scale=="log":
+                if not norm_target:
+                    norm = mcolors.LogNorm(tolerance) if tolerance is not None else None
+                else:
+                    norm = mcolors.LogNorm(norm_target)
 
             image = ax_i.imshow(
                 np.reshape(profile_chi2[e] - minimum, (n, n)),
@@ -421,29 +432,36 @@ def plot_scan_2d(
                 ax=ax_i,
             )
             cb.set_label(r"$\Delta \chi^2$")
-            cb.ax.set_yscale("linear")
+            cb.ax.set_yscale(cbar_scale)
 
-            if norm_target is not None:
-                c = ax_i.contour(
-                    np.reshape(profile_evs[*e, 1], (n, n)),
-                    np.reshape(profile_evs[*e, 2], (n, n)),
-                    np.reshape(profile_chi2[e] - minimum, (n, n)),
-                    levels=[norm_target / 2, norm_target, 2 * norm_target],
-                    colors="black",
-                )
-                ax_i.clabel(c, c.levels)
+            if draw_contour:
 
-            elif tolerance is not None:
-                c = ax_i.contour(
-                    np.reshape(profile_evs[*e, 1], (n, n)),
-                    np.reshape(profile_evs[*e, 2], (n, n)),
-                    np.reshape(profile_chi2[e] - minimum, (n, n)),
-                    levels=[tolerance / 2, tolerance, 2 * tolerance],
-                    colors="black",
-                )
-                ax_i.clabel(c, c.levels)  # pyright: ignore[reportAttributeAccessIssue]
+                if norm_target is not None:
+                    if levels==None:
+                        levels=[norm_target / 2, norm_target, 2 * norm_target]
+                    c = ax_i.contour(
+                        np.reshape(profile_evs[*e, 1], (n, n)),
+                        np.reshape(profile_evs[*e, 2], (n, n)),
+                        np.reshape(profile_chi2[e] - minimum, (n, n)),
+                        levels=levels,
+                        colors="black",
+                    )
+                    ax_i.clabel(c, c.levels)
 
-            ax_i.plot(0, 0, "*", color="black")
+                elif tolerance is not None:
+                    if levels==None:
+                        levels=[tolerance / 2, tolerance, 2 * tolerance]
+                    c = ax_i.contour(
+                        np.reshape(profile_evs[*e, 1], (n, n)),
+                        np.reshape(profile_evs[*e, 2], (n, n)),
+                        np.reshape(profile_chi2[e] - minimum, (n, n)),
+                        levels=levels,
+                        colors="black",
+                    )
+                    ax_i.clabel(c, c.levels)  # pyright: ignore[reportAttributeAccessIssue]
+
+            if plot_minimum:
+                ax_i.plot(0, 0, "*", color="black")
 
             ax_i.set(
                 xlabel=f"EV {e[0]}",
