@@ -1570,27 +1570,40 @@ class EVScan2D(EVScan):
                 ]
 
                 ev_ids.append(ev_i)
-                profile_evs.append(profile_evs_i)
-                profile_chi2.append(profile_chi2_i)
+                print(profile_evs_i[0])
+                profile_evs_i_sorted=[sorted(profile_evs_i[0], key=lambda x: (x[0],x[1]))]
+                profile_evs.append(profile_evs_i_sorted)
+                print([sub for sub in profile_evs_i[0]])
+                	
+                profile_chi2_i_sorted = [
+                    chi2 for _, chi2 in sorted(
+                        zip(profile_evs_i[0], profile_chi2_i),
+                        key=lambda pair: (pair[0][0], pair[0][1])
+                    )]
+
+                #profile_chi2_i_sorted=[x for _, x in sorted(zip([sub[1] for sub in profile_evs_i[0]], profile_chi2_i))]
+                profile_chi2.append(profile_chi2_i_sorted)
         assert _all_equal([len(ev_ids),  len(profile_chi2)])
         self._evs_scanned = ev_ids
         # sort the columns by the parameter indices
-        #ev_ids,  profile_chi2 = zip(
-        #    *sorted(
-        #        zip(ev_ids, profile_chi2),
-        #        key=lambda x: self._evs_scanned[x[0]],
-        #    )
-        #)
+        # ev_ids,  profile_chi2 = zip(
+        #     *sorted(
+        #         zip(ev_ids, profile_chi2),
+        #         key=lambda x: self._evs_scanned[x],
+        #     )
+        # )
+
+        print(profile_evs)
         self._profile_evs =pd.DataFrame(
-            [list(np.array([y[i] for x in profile_evs for y in x[::2]]).flatten()) for i in range(len(profile_evs[0][0]))],
+            [list(np.array([y[i] for x in profile_evs for y in x]).flatten()) for i in range(len(profile_evs[0][0]))],
             columns=pd.MultiIndex.from_tuples(
                 [(p1, p2, i) for p1, p2 in ev_ids for i in range(1,3)],
                 names=("EV1", "EV2", "parameter_index"),
             ),
         )
-    
-        
+
         self._profile_chi2 = pd.DataFrame(
+
             np.array(profile_chi2).T,
             columns=pd.MultiIndex.from_tuples(
                 ev_ids
@@ -1620,15 +1633,19 @@ class EVScan2D(EVScan):
         self,
         ax: plt.Axes | Sequence[plt.Axes],
         eigenvectors: tuple[int, int] | list[tuple[int, int]] | None = None,
-        norm_target:float | None=None,
         draw_contour:bool= True,
         plot_minimum:bool= True,
         levels:list |None =None,
         cbar_scale: Literal["linear", "log"]="linear",
+        vmax:float=1000,
+        colormap:str="Spectral_r",
+        tolarance:float|None=None,
         **kwargs: Any,
     ) -> None:
         
         minimum = self.minimum_chi2
+        if not tolarance:
+            tolerance=self.target_delta_chi2
 
         plot_scan_2d(
             ax=ax,
@@ -1637,11 +1654,12 @@ class EVScan2D(EVScan):
             eigenvectors=eigenvectors,
             modus="EV",
             minimum=minimum,
-            tolerance=self.target_delta_chi2,
-            norm_target=  norm_target,
+            tolerance=tolarance,
             draw_contour=draw_contour,
             levels=levels,
             plot_minimum=plot_minimum,
             cbar_scale=cbar_scale,
+            vmax=vmax,
+            colormap=colormap,
             **kwargs,
         )

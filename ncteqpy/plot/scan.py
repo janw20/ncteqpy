@@ -280,11 +280,12 @@ def plot_scan_2d(
     parameters: tuple[str, str] | list[tuple[str, str]] | None = None,
     eigenvectors: tuple[int, int] | list[tuple[int, int]] | None = None,
     tolerance: float | None = None,
-    norm_target: float | None =None,
     draw_contour: bool =True,
     plot_minimum:bool=True,
     levels:list |None =None,
     cbar_scale: Literal["linear", "log"]="linear",
+    vmax:float=1000,
+    colormap:str="Spectral_r",
     **kwargs: Any,
 ) -> None:
 
@@ -345,6 +346,7 @@ def plot_scan_2d(
             cb = ax_i.figure.colorbar(
                 image,
                 ax=ax_i,
+                extend="max",
             )
             cb.set_label(r"$\Delta \chi^2$")
             cb.ax.set_yscale("linear")
@@ -401,59 +403,44 @@ def plot_scan_2d(
             ax_i.set_box_aspect(1)
 
             if cbar_scale=="linear":
-                if not norm_target:
-                    norm = mcolors.TwoSlopeNorm(tolerance) if tolerance is not None else None
-                else:
-                    norm = mcolors.TwoSlopeNorm(norm_target)
-            if cbar_scale=="log":
-                if not norm_target:
-                    norm = mcolors.LogNorm(tolerance) if tolerance is not None else None
-                else:
-                    norm = mcolors.LogNorm(norm_target)
+                norm = mcolors.TwoSlopeNorm(tolerance) if tolerance is not None else None
 
+            if cbar_scale=="log":
+                norm = mcolors.LogNorm(vmin=1, vmax=vmax) if tolerance is not None else None
+            cmap=plt.get_cmap(colormap).copy()
+            cmap.set_over("black")
             image = ax_i.imshow(
                 np.reshape(profile_chi2[e] - minimum, (n, n)),
                 extent=(
-                    profile_evs[*e, 1].min(),
-                    profile_evs[*e, 1].max(),
-                    profile_evs[*e, 2].min(),
-                    profile_evs[*e, 2].max(),
+                    np.array(profile_evs[*e, 1]).min(),
+                    np.array(profile_evs[*e, 1]).max(),
+                    np.array(profile_evs[*e, 2]).min(),
+                    np.array(profile_evs[*e, 2]).max(),
                 ),
-                cmap="Spectral_r",
+                cmap=cmap,
                 norm=norm,  # pyright: ignore[reportArgumentType]
-                interpolation="bicubic",
+                interpolation="bilinear",
                 origin="lower",
-                aspect="auto",
+                #aspect="equal",
                 **kwargs,
             )
-
+            #image = ax_i.pcolormesh(X, Y, np.reshape(profile_chi2[e] - minimum, (n, n)), shading='auto')
             cb = ax_i.figure.colorbar(
                 image,
                 ax=ax_i,
+                extend="max"
             )
+            cb.ax.set_ylim(0,vmax)
             cb.set_label(r"$\Delta \chi^2$")
             cb.ax.set_yscale(cbar_scale)
-
+            
             if draw_contour:
-
-                if norm_target is not None:
-                    if levels==None:
-                        levels=[norm_target / 2, norm_target, 2 * norm_target]
-                    c = ax_i.contour(
-                        np.reshape(profile_evs[*e, 1], (n, n)),
-                        np.reshape(profile_evs[*e, 2], (n, n)),
-                        np.reshape(profile_chi2[e] - minimum, (n, n)),
-                        levels=levels,
-                        colors="black",
-                    )
-                    ax_i.clabel(c, c.levels)
-
-                elif tolerance is not None:
+                if tolerance is not None:
                     if levels==None:
                         levels=[tolerance / 2, tolerance, 2 * tolerance]
                     c = ax_i.contour(
-                        np.reshape(profile_evs[*e, 1], (n, n)),
                         np.reshape(profile_evs[*e, 2], (n, n)),
+                        np.reshape(profile_evs[*e, 1], (n, n)),
                         np.reshape(profile_chi2[e] - minimum, (n, n)),
                         levels=levels,
                         colors="black",
