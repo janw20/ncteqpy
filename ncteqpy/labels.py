@@ -76,11 +76,12 @@ theory_py_to_tex = {
 
 uncertainties_yaml_to_py = {
     "STAT": "unc_stat",
-    "SYSU": "unc_sys",
-    "SYST": "unc_tot",
+    "SYSU": "unc_sys_uncorr",
+    "COR": "unc_sys_corr",
+    "CORP": "unc_sys_corr_percent",
+    "SYST": "unc_sys_corr_tot",
     "THEO": "unc_theo",
-    "EPS": "unc_eps", # ? e.g. in ccfrXmuNu3_791.yaml
-    "CORP": "unc_corp"  # ? e.g. in chorxsNb2_5947.yaml
+    "EPS": "unc_eps",  # ? e.g. in ccfrXmuNu3_791.yaml
 }
 
 data_yaml_to_py = {
@@ -221,8 +222,8 @@ def nucleus_to_latex(
     """
 
     if Z is not None and A is not None:
-        if np.isnan(Z) and np.isnan(A):
-            return str(np.nan)
+        if np.isnan(Z) and np.isnan(A) or np.isinf(Z) and np.isinf(A):
+            return "\\dots"
 
         row = _elements.iloc[
             (_elements[["AtomicNumber", "AtomicMass"]] - [Z, A])

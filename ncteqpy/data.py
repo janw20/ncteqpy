@@ -2,16 +2,29 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Literal, Sequence, cast
+from typing import Any, Literal, Sequence, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
+import sympy as sp
 import yaml
 
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
-from ncteqpy.cuts import Cut, Cuts
+from ncteqpy.cuts import Cuts, cut_accepts
+from ncteqpy.kinematic_variables import (
+    Q2_disdimu,
+    Q2_hq_pT_bin,
+    Q2_sih,
+    W2_dis,
+    W2_disdimu,
+    x_hq_bin,
+    x_sih,
+    x_wzprod_bin,
+)
+from ncteqpy.plot.kinematic_coverage import plot_kinematic_coverage
 from ncteqpy.settings import Settings
 
 
@@ -336,23 +349,76 @@ class Datasets(jaml.YAMLWrapper):
             self._points["type_experiment"].isin(["DIS", "DISNEU"])
             & self._points["W2"].isna()
         )
-        self._points.loc[mask_dis, "W2"] = (
-            self._points.loc[mask_dis, "Q2"]
-            * (1.0 / self._points.loc[mask_dis, "x"] - 1.0)
-            + m_proton**2
+        self._points.loc[mask_dis, "W2"] = sp.lambdify(
+            tuple(W2_dis.free_symbols), W2_dis
+        )(**self._points.loc[mask_dis, ["Q2", "x"]])
+
+        # calculate Q2 and W2 for DISDIMU
+        mask_disdimu = self._points["type_experiment"] == "DISDIMU"
+        mask_disdimu_w2 = mask_disdimu & self._points["W2"].isna()
+        mask_disdimu_q2 = mask_disdimu & self._points["Q2"].isna()
+
+        self._points.loc[mask_disdimu_w2, "W2"] = sp.lambdify(
+            tuple(W2_disdimu.free_symbols), W2_disdimu
+        )(
+            **self._points.loc[mask_disdimu_w2, ["x", "y", "E_had"]],
+        )
+        self._points.loc[mask_disdimu_q2, "Q2"] = sp.lambdify(
+            tuple(Q2_disdimu.free_symbols), Q2_disdimu
+        )(
+            **self._points.loc[mask_disdimu_q2, ["x", "y", "E_had"]],
         )
 
-        mask_disdimu = (self._points["type_experiment"] == "DISDIMU") & self._points[
-            "W2"
-        ].isna()
-        self._points.loc[mask_disdimu, "W2"] = (
-            m_proton**2
-            + 2.0
-            * m_proton
-            * (1.0 - self._points.loc[mask_disdimu, "x"])
-            * self._points.loc[mask_disdimu, "y"]
-            * self._points.loc[mask_disdimu, "E_had"]
+        # calculate x and Q2 for WZPROD
+        mask_wzprod = self._points["type_experiment"] == "WZPROD"
+        mask_wzprod_Q2 = mask_wzprod & self._points["Q2"].isna()
+        mask_wzprod_x = mask_wzprod & self._points["x"].isna()
+
+        m2_W = 80.4**2
+        m2_Z = 91.2**2
+        self._points.loc[mask_wzprod_Q2, "Q2"] = self._points.loc[
+            mask_wzprod_Q2, "final_state"
+        ].map(
+            {
+                "WPLUS": m2_W,
+                "WMINUS": m2_W,
+                "Z": m2_Z,
+            }
         )
+        self._points.loc[mask_wzprod_x, "x"] = sp.lambdify(
+            tuple(x_wzprod_bin.free_symbols), x_wzprod_bin
+        )(**self._points.loc[mask_wzprod_x, ["Q2", "sqrt_s", "eta_min", "eta_max"]])
+
+        # calculate x and Q2 for SIH
+        mask_sih = self._points["type_experiment"] == "SIH"
+        mask_sih_Q2 = mask_sih & self._points["Q2"].isna()
+        mask_sih_x = mask_sih & self._points["x"].isna()
+
+        self._points.loc[mask_sih_Q2, "Q2"] = sp.lambdify(
+            tuple(Q2_sih.free_symbols), Q2_sih
+        )(pT=self._points.loc[mask_sih_Q2, "pT"])
+        self._points.loc[mask_sih_x, "x"] = sp.lambdify(
+            tuple(x_sih.free_symbols), x_sih
+        )(**self._points.loc[mask_sih_x, ["Q2", "sqrt_s", "y"]])
+
+        # calculate x and Q2 for HQ, OPENHEAVY and QUARKONIUM
+        for type_exp in "HQ", "OPENHEAVY", "QUARKONIUM":
+            mask_hq = self._points["type_experiment"] == type_exp
+            mask_hq_Q2 = mask_hq & self._points["Q2"].isna()
+            mask_hq_x = mask_hq & self._points["x"].isna()
+
+            mask_hq_x_diff = mask_hq_x & self._points["sigma"].notna()
+            # TODO: figure out how to treat sigma_pT_integrated
+            mask_hq_x_int = mask_hq_x & self._points["sigma_pT_integrated"].notna()
+
+            self._points.loc[mask_hq_Q2, "Q2"] = sp.lambdify(
+                tuple(Q2_hq_pT_bin.free_symbols), Q2_hq_pT_bin
+            )(**self._points.loc[mask_hq_Q2, ["pT_min", "pT_max"]])
+            self._points.loc[mask_hq_x_diff, "x"] = sp.lambdify(
+                tuple(x_hq_bin.free_symbols), x_hq_bin
+            )(**self._points.loc[mask_hq_x_diff, ["Q2", "sqrt_s", "y_min", "y_max"]])
+
+        # assert self._points[["x", "Q2"]].notna().all().all()
 
         self._points["unc_tot"] = (
             self._points[["unc_stat", "unc_sys_uncorr"]] ** 2
@@ -398,6 +464,11 @@ class Datasets(jaml.YAMLWrapper):
                 np.arange(len(self._points)), idx_heavier
             ],
         )
+
+        # to group by A, these cannot be nan, because GroupBy.get_group does not find keys that include nan. so we fill with np.inf
+        self._points.loc[:, ["A1", "Z1", "A2", "Z2"]] = self._points.loc[
+            :, ["A1", "Z1", "A2", "Z2"]
+        ].fillna(value=np.inf)
 
         # apply cuts
         if self.cuts is not None:
@@ -524,35 +595,63 @@ class Datasets(jaml.YAMLWrapper):
             ],
         )
 
+        # to group by A, these cannot be nan, because GroupBy.get_group does not find keys that include nan. so we fill with np.inf
+        self._index.loc[:, ["A1", "Z1", "A2", "Z2"]] = self._index.loc[
+            :, ["A1", "Z1", "A2", "Z2"]
+        ].fillna(value=np.inf)
+
     def plot_kinematic_coverage(
         self,
         ax: plt.Axes,
         kinematic_variables: tuple[str, str] = ("x", "Q2"),
         filter_query: str | None = None,
-        groupby: str | None = None,
+        groupby: str = "id_dataset",
+        show_cut_points: Literal["before", "after", "both"] = "both",
+        cuts: (
+            list[tuple[float | sp.Rel | sp.Expr, npt.NDArray[np.floating]]] | None
+        ) = None,
+        cuts_labels: list[tuple[float, str] | None] | None = None,
+        cuts_labels_offset: float | list[float | None] | None = None,
+        kwargs_points: dict[str, Any] | list[dict[str, Any] | None] | None = None,
+        kwargs_points_after_cuts: (
+            dict[str, Any] | list[dict[str, Any] | None] | None
+        ) = None,
+        kwargs_cuts: dict[str, Any] | list[dict[str, Any] | None] | None = None,
+        kwargs_cuts_labels: dict[str, Any] | list[dict[str, Any] | None] | None = None,
     ) -> None:
 
-        filtered_index = (
-            self.index.query(filter_query) if filter_query is not None else self.index
+        filtered_points = (
+            self.points.query(filter_query) if filter_query is not None else self.points
         )
-        points = [
-            Dataset(
-                p[1]["path"],
-                (
-                    (self.cuts.get(id_dataset=p[1]["id_dataset"]))
-                    if self.cuts is not None
-                    else None
-                ),
-            ).points
-            for p in filtered_index.iterrows()
-        ]
+        filtered_points_after_cuts = (
+            self.points_after_cuts.query(filter_query)
+            if filter_query is not None
+            else self.points_after_cuts
+        )
+
+        if show_cut_points == "before":
+            points = filtered_points
+            points_before_cuts = None
+        elif show_cut_points == "after":
+            points = filtered_points_after_cuts
+            points_before_cuts = None
+        else:
+            points = filtered_points_after_cuts
+            points_before_cuts = filtered_points
 
         plot_kinematic_coverage(
             ax=ax,
-            points=points,
-            datasets_index=filtered_index,
+            points=filtered_points_after_cuts,
+            points_before_cuts=filtered_points,
             kinematic_variables=kinematic_variables,
             groupby=groupby,
+            cuts=cuts,
+            cuts_labels=cuts_labels,
+            cuts_labels_offset=cuts_labels_offset,
+            kwargs_points=kwargs_points,
+            kwargs_points_before_cuts=kwargs_points_after_cuts,
+            kwargs_cuts=kwargs_cuts,
+            kwargs_cuts_labels=kwargs_cuts_labels,
         )
 
 
@@ -571,7 +670,7 @@ class Dataset:
     _kinematic_variables: list[str] | None = None
     # TODO add rest of fields
 
-    _cut: Cut | None = None
+    _cut: sp.Rel | None = None
 
     _plotting_short_info: str | None = None
     _plotting_reference_id: str | None = None
@@ -581,7 +680,7 @@ class Dataset:
     _plotting_label_theory: str | None = None
     _plotting_unit_theory: str | None = None
 
-    def __init__(self, path: str | os.PathLike, cut: Cut | None = None) -> None:
+    def __init__(self, path: str | os.PathLike, cut: sp.Rel | None = None) -> None:
         path = Path(path)
         self._path = path
 
@@ -675,7 +774,7 @@ class Dataset:
                 )
 
         if self.cut is not None:
-            self._points = self._points[self.cut.accepts(self._points)]
+            self._points = self._points[cut_accepts(self.cut, self._points)]
 
         if not "unc_tot" in self._points.columns:
             errs = list(set(self.points.columns) & set(["unc_stat", "unc_sys"]))
@@ -862,12 +961,8 @@ class Dataset:
 
         return self._plotting_unit_theory
 
-    def apply(self, cuts: Cut | Sequence[Cut]) -> None:
-        if isinstance(cuts, Cut):
-            cuts = [cuts]
-
-        for cut in cuts:
-            self._points = self._points[cut.accepts(self._points)]
+    def apply(self, cut: sp.Rel) -> None:
+        self._points = self._points[cut_accepts(cut, self._points)]
 
     def plot(
         self,
