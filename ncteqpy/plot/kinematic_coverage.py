@@ -15,6 +15,7 @@ from ncteqpy.util import update_kwargs
 
 # GroupbyType = str | float | tuple[str | float, ...]
 
+
 def plot_kinematic_coverage(
     ax: plt.Axes,
     points: pd.DataFrame,
