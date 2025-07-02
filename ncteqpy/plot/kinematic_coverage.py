@@ -211,6 +211,9 @@ def plot_kinematic_coverage(
                         )
 
                         if offset is not None:
+                            if kwargs["va"] == "bottom":
+                                offset *= -1
+
                             # transform delta (the tangent) to display coordinates (dots)
                             delta_tr = ax.transData.transform(
                                 np.array([delta_x, delta_y])
