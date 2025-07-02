@@ -1,37 +1,37 @@
 import ncteqpy.labels as labels
 from ncteqpy.chi2 import Chi2
-from ncteqpy.correlations import Correlations
+from ncteqpy.correlations import CosPhi, DeltaChi2Eff, L2Sensitivity
 from ncteqpy.cuts import Cuts, cut_accepts
 from ncteqpy.data import Dataset, Datasets
 from ncteqpy.hessian import Hessian
 from ncteqpy.kinematic_variables import (
-    pT,
-    pT_min,
-    pT_max,
-    y,
-    y_min,
-    y_max,
-    eta,
-    eta_min,
-    eta_max,
-    x,
     Q2,
     W2,
-    sqrt_s,
     E_had,
-    W2_dis,
-    Q2_disdimu,
-    W2_disdimu,
     Q2_dis,
-    Q2_sih,
-    x_sih,
-    x_wzprod,
-    x_wzprod_bin,
+    Q2_disdimu,
     Q2_hq_pT,
     Q2_hq_pT_bin,
     Q2_hq_y,
+    Q2_sih,
+    W2_dis,
+    W2_disdimu,
+    eta,
+    eta_max,
+    eta_min,
+    pT,
+    pT_max,
+    pT_min,
+    sqrt_s,
+    x,
     x_hq,
     x_hq_bin,
+    x_sih,
+    x_wzprod,
+    x_wzprod_bin,
+    y,
+    y_max,
+    y_min,
 )
 from ncteqpy.labels import nucleus_to_latex
 from ncteqpy.run import Runs
@@ -40,16 +40,18 @@ from ncteqpy.settings import Settings
 
 __all__ = [
     "Chi2",
-    "Correlations",
+    "CosPhi",
     "Cuts",
     "cut_accepts",
     "Dataset",
     "Datasets",
+    "DeltaChi2Eff",
     "eta",
     "eta_min",
     "eta_max",
     "E_had",
     "Hessian",
+    "L2Sensitivity",
     "labels",
     "nucleus_to_latex",
     "ParameterScan1D",
