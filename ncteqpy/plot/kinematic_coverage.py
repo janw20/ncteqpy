@@ -108,7 +108,7 @@ def plot_kinematic_coverage(
                 "marker": marker,
                 "markersize": 3,
                 "ls": "",
-                "zorder": 5,
+                "zorder": 1.1,
                 "color": "lightgray",
             }
 
@@ -135,7 +135,7 @@ def plot_kinematic_coverage(
             "marker": marker,
             "markersize": 3,
             "ls": "",
-            "zorder": 6,
+            "zorder": 1.2,
             "label": str(label_i),
         }
 
@@ -160,7 +160,7 @@ def plot_kinematic_coverage(
                 "color": "black",
                 "ls": (0, (5, 7)),
                 "lw": 0.8,
-                "zorder": 6,
+                "zorder": 1.3,
                 "scalex": False,
                 "scaley": False,
             }
@@ -190,7 +190,7 @@ def plot_kinematic_coverage(
                         "rotation": np.rad2deg(np.atan2(delta_y, delta_x)),
                         "rotation_mode": "anchor",
                         "transform_rotates_text": True,
-                        "zorder": 7,
+                        "zorder": 1.4,
                         "fontsize": "x-small",
                         "bbox": dict(
                             facecolor=(1, 1, 1),
