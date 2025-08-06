@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Literal, Sequence, cast
+from typing_extensions import Any, Hashable, Literal, Sequence, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,6 +14,7 @@ import yaml
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
 from ncteqpy.cuts import Cuts, cut_accepts
+from ncteqpy.data_groupby import DatasetsGroupBy
 from ncteqpy.kinematic_variables import (
     Q2_disdimu,
     Q2_hq_pT_bin,
@@ -227,6 +228,23 @@ class Datasets(jaml.YAMLWrapper):
         self._cached_datasets[path] = dataset
 
         return dataset
+
+    def groupby(
+        self,
+        by: str | list[str],
+        order: list[Hashable] | None = None,
+        labels: dict[Hashable, str] | None = None,
+        label_format: str | None = None,
+        props: dict[Hashable, dict[str, Any]] | None = None,
+    ) -> DatasetsGroupBy:
+        return DatasetsGroupBy(
+            datasets_index=self.index,
+            by=by,
+            order=order,
+            labels=labels,
+            label_format=label_format,
+            props=props,
+        )
 
     def _load_points(self, verbose: bool | int = False, settings: None = None) -> None:
         points_list = []

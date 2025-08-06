@@ -3,6 +3,7 @@ from ncteqpy.chi2 import Chi2
 from ncteqpy.correlations import CosPhi, DeltaChi2Eff, L2Sensitivity
 from ncteqpy.cuts import Cuts, cut_accepts
 from ncteqpy.data import Dataset, Datasets
+from ncteqpy.data_groupby import DatasetsGroupBy
 from ncteqpy.hessian import Hessian
 from ncteqpy.kinematic_variables import (
     Q2,
@@ -45,6 +46,7 @@ __all__ = [
     "cut_accepts",
     "Dataset",
     "Datasets",
+    "DatasetsGroupBy",
     "DeltaChi2Eff",
     "eta",
     "eta_min",
