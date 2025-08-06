@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Literal, Sequence, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -9,19 +8,28 @@ import pandas as pd
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch
+from typing_extensions import Any, Literal, Sequence, cast
 
 import ncteqpy.data as data
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
 import ncteqpy.util as util
+from ncteqpy.data_groupby import DatasetsGroupBy
 from ncteqpy.plot import data_vs_theory
 from ncteqpy.plot import util as p_util
+from ncteqpy.plot.chi2_histograms import (
+    plot_chi2_data_breakdown,
+    plot_chi2_histogram,
+    plot_S_E_histogram,
+)
 from ncteqpy.plot.grid import AxesGrid
 
 
 # TODO: implement pickling for the other members
 # TODO: implement some functionality to record the parsing time for each variable so they can be grouped together systematically
 class Chi2(jaml.YAMLWrapper):
+
+    _datasets: data.Datasets
 
     _parameters_names: list[str] | None = None
     _parameters_indices: dict[str, int] | None = None
@@ -30,11 +38,26 @@ class Chi2(jaml.YAMLWrapper):
     _parameters_values_at_min: npt.NDArray[np.float64] | None = None
     _last_value: float | None = None
     _last_value_with_penalty: float | None = None
-    _last_value_per_data: dict[int, float] | None = None
+    _last_value_per_data: pd.Series[float] | None = None
+    _normalizations: pd.DataFrame | None = None
     _snapshots_parameters: pd.DataFrame | None = None
     _snapshots_values: npt.NDArray[np.float64] | None = None
     _snapshots_breakdown_points: pd.DataFrame | None = None
     _snapshots_breakdown_datasets: pd.DataFrame | None = None
+    _num_points: pd.Series[int] | None = None
+
+    _S_E: pd.Series[float] | None = None
+    _points: pd.DataFrame | None = None
+
+    def __init__(
+        self,
+        paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
+        datasets: data.Datasets,
+        cache_path: str | os.PathLike[str] = ".jaml_cache",
+        retain_yaml: bool = False,
+    ) -> None:
+        super().__init__(paths, cache_path, retain_yaml)
+        self._datasets = datasets
 
     # the traversing for these the members set here takes all about equal time, with negligible parsing time. Parsing them together is thus more efficient # TODO: not sure if snapshots_values should be here
     def _load_snapshots_without_breakdown_points(self) -> None:
@@ -128,7 +151,23 @@ class Chi2(jaml.YAMLWrapper):
             self._snapshots_breakdown_points.set_index(
                 ["id_snapshot", "id_point"], inplace=True
             )
+
+            # multiply the theory for which normalization is fitted with its corresponding factor
+            mask = self._snapshots_breakdown_points["id_dataset"].isin(
+                self.normalizations.index
+            )
+            self._snapshots_breakdown_points.loc[mask, "theory_with_normalization"] = (
+                self._snapshots_breakdown_points.loc[mask, "theory"]
+                * self.normalizations.loc[
+                    self._snapshots_breakdown_points.loc[mask, "id_dataset"]
+                ]["factor"].to_numpy()
+            )
+
             self._pickle(self._snapshots_breakdown_points, pickle_name)
+
+    @property
+    def datasets(self) -> data.Datasets:
+        return self._datasets
 
     @property
     def parameters_names(self) -> list[str]:
@@ -255,44 +294,287 @@ class Chi2(jaml.YAMLWrapper):
         return self._last_value_with_penalty
 
     @property
-    def last_value_per_data(self) -> dict[int, float]:
+    def last_value_per_data(self) -> pd.Series[float]:
         if self._last_value_per_data is None or self._yaml_changed():
             pattern = jaml.Pattern({"Chi2Fcn": {"LastValuePerData": None}})
             yaml = self._load_yaml(pattern)
 
-            self._last_value_per_data = cast(
-                dict[int, float], jaml.nested_get(yaml, ["Chi2Fcn", "LastValuePerData"])
+            self._last_value_per_data = pd.Series(
+                cast(
+                    dict[int, float],
+                    jaml.nested_get(yaml, ["Chi2Fcn", "LastValuePerData"]),
+                )
             )
+            self._last_value_per_data.index.name = "id_dataset"
 
         return self._last_value_per_data
+
+    @property
+    def normalizations(self) -> pd.DataFrame:
+        if self._normalizations is None or self._yaml_changed():
+            pattern = jaml.Pattern({"Chi2Fcn": {"NormInfo": None}})
+            yaml = cast(
+                dict[str, dict[str, list[dict[str, object]]]], self._load_yaml(pattern)
+            )
+
+            norm_records = []
+            for norm_info in yaml["Chi2Fcn"]["NormInfo"]:
+                for id_dataset in cast(list[int], norm_info["IDs"]):
+                    norm_records.append(
+                        {
+                            "id_dataset": id_dataset,
+                            "factor": norm_info["Value"],
+                            "penalty": norm_info["Penalty"],
+                            "scheme": norm_info["Scheme"],
+                        }
+                    )
+
+            self._normalizations = pd.DataFrame.from_records(
+                norm_records, index="id_dataset"
+            )
+
+        return self._normalizations
 
     @property
     def snapshots_parameters(self) -> pd.DataFrame:
         if self._snapshots_parameters is None or self._yaml_changed():
             self._load_snapshots_without_breakdown_points()
 
-        return self._snapshots_parameters  # type: ignore[return-value] # value cannot be None since it is set in the if clause
+        assert self._snapshots_parameters is not None
+
+        return self._snapshots_parameters
 
     @property
-    def snapshots_values(self) -> pd.DataFrame:
+    def snapshots_values(self) -> npt.NDArray[np.float64]:
         if self._snapshots_values is None or self._yaml_changed():
             self._load_snapshots_without_breakdown_points()
 
-        return self._snapshots_values  # type: ignore[return-value] # value cannot be None since it is set in the if clause
+        assert self._snapshots_values is not None
+
+        return self._snapshots_values
 
     @property
     def snapshots_breakdown_datasets(self) -> pd.DataFrame:
         if self._snapshots_breakdown_datasets is None or self._yaml_changed():
             self._load_snapshots_without_breakdown_points()
 
-        return self._snapshots_breakdown_datasets  # type: ignore[return-value] # value cannot be None since it is set in the if clause
+        assert self._snapshots_breakdown_datasets is not None
+
+        return self._snapshots_breakdown_datasets
 
     @property
     def snapshots_breakdown_points(self) -> pd.DataFrame:
         if self._snapshots_breakdown_points is None or self._yaml_changed():
             self._load_snapshots_breakdown_points()
 
-        return self._snapshots_breakdown_points  # type: ignore[return-value] # value cannot be None since it is set in the if clause
+        assert self._snapshots_breakdown_points is not None
+
+        return self._snapshots_breakdown_points
+
+    @property
+    def num_points(self) -> pd.Series[int]:
+        if self._num_points is None or self._yaml_changed():
+            self._num_points = (
+                self.snapshots_breakdown_points.loc[0]
+                .groupby("id_dataset")["id_dataset"]
+                .count()
+            )
+            self._num_points.name = None
+
+        return self._num_points
+
+    @property
+    def points(self) -> pd.DataFrame:
+        if self._points is None or self._yaml_changed():
+            self._points = cast(
+                pd.DataFrame, self.snapshots_breakdown_points.loc[1].copy()
+            )  # FIXME figure out which snapshots to read
+
+            match_cols = (
+                ["id_dataset"]
+                + self.points.columns[
+                    self.points.columns.isin(labels.kinvars_yaml_to_py.values())
+                ].to_list()
+                + ["data"]
+            )
+            cols = (
+                match_cols
+                + list(labels.uncertainties_yaml_to_py.values())
+                + ["unc_tot"]
+            )
+            self._points = pd.merge(
+                self.points,
+                self.datasets.points_after_cuts[cols],
+                on=match_cols,
+                how="left",
+            )
+            self._points.index = self.snapshots_breakdown_points.loc[1].index.copy()
+
+            # compute PDF uncertainties for each point
+            for col_in in "theory", "theory_with_normalization":
+                for col_out, func in (
+                    ("pdf_unc_sym", util.pdf_uncertainty_sym),
+                    ("pdf_unc_asym_lower", util.pdf_uncertainty_asym_lower),
+                    ("pdf_unc_asym_upper", util.pdf_uncertainty_asym_upper),
+                ):
+                    self._points[f"{col_in}_{col_out}"] = (
+                        self.snapshots_breakdown_points.loc[1:]
+                        .groupby("id_point")[col_in]
+                        .apply(func)
+                    )
+
+        return self._points
+
+    @property
+    def S_E(self) -> pd.Series[float]:
+        if self._S_E is None or self._yaml_changed():
+            self._S_E = cast(
+                pd.Series,
+                np.sqrt(2 * self.last_value_per_data)
+                - np.sqrt(2 * self.num_points - 1),
+            )
+
+        return self._S_E
+
+    def plot_data_breakdown(
+        self,
+        ax: Axes,
+        per_point: bool = True,
+        bar_orientation: Literal["horizontal", "vertical"] = "horizontal",
+        chi2_line_1: bool = True,
+        chi2_drop_0: bool = True,
+        bar_groupby: DatasetsGroupBy | None = None,
+        bar_props_groupby: DatasetsGroupBy | None = None,
+        bar_order_groupby: str | list[str] | None = None,
+        kwargs_bar: dict[str, Any] = {},
+        kwargs_bar_label: dict[str, Any] = {},
+        kwargs_chi2_line_1: dict[str, Any] = {},
+        kwargs_legend: dict[str, Any] = {},
+    ) -> None:
+        """Plot histogram of χ² vs. (grouped) datasets.
+
+        Parameters
+        ----------
+        ax : plt.Axes
+            The axes to plot on.
+        per_point : bool, optional
+            If χ² per point should be plotted, by default True.
+        bar_orientation : Literal["horizontal", "vertical"], optional
+            Direction in which the bars are oriented, by default "vertical".
+        chi2_line_1 : bool, optional
+            If a line should be plotted at χ²/point = 1, by default True. Does nothing if `per_point` is `False`.
+        chi2_drop_0 : bool, optional
+            If data sets with χ² = 0 should be ignored when plotting (i.e., data sets that did not survive the cuts), by default True.
+        bar_groupby : DatasetsGroupBy | None, optional
+            How to group the bars, by default no grouping. One bar per group is plotted.
+        bar_props_groupby : DatasetsGroupBy | None, optional
+            How to group the properties (color etc.) of each bar, by default no grouping, i.e., all bars get the same properties.
+        kwargs_bar : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.bar` or `plt.Axes.barh`.
+        kwargs_bar_label : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.bar_label`.
+        kwargs_chi2_line_1 : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.axhline` or `plt.Axes.axvline` for the line at χ²/point = 1.
+        kwargs_legend : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.legend` for the legend set by `bar_props_groupby`.
+        """
+
+        plot_chi2_data_breakdown(
+            ax=ax,
+            chi2=self.last_value_per_data,
+            per_point=per_point,
+            num_points=self.num_points,
+            chi2_line_1=chi2_line_1,
+            chi2_drop_0=chi2_drop_0,
+            bar_orientation=bar_orientation,
+            bar_groupby=bar_groupby,
+            bar_props_groupby=bar_props_groupby,
+            bar_order_groupby=bar_order_groupby,
+            kwargs_bar=kwargs_bar,
+            kwargs_bar_label=kwargs_bar_label,
+            kwargs_chi2_line_1=kwargs_chi2_line_1,
+            kwargs_legend=kwargs_legend,
+        )
+
+    def plot_chi2_histogram(
+        self,
+        bin_width: float | None = None,
+        subplot_groupby: DatasetsGroupBy | None = None,
+        kwargs_subplots: dict[str, Any] = {},
+        kwargs_histogram: dict[str, Any] | list[dict[str, Any] | None] = {},
+    ) -> AxesGrid:
+        """Plots a histogram of the χ² values of the data points.
+
+        Parameters
+        ----------
+        bin_width : float | None, optional
+            Width of a bin, by default chosen by `np.histogram`.
+        subplot_groupby : DatasetsGroupBy | None, optional
+            How to group χ² values that are shown in distributions on different subplots, by default None.
+        kwargs_subplots : dict[str, Any], optional
+            Keyword arguments passed to `plt.subplots` through `AxesGrid`.
+        kwargs_histogram : dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments passed to `plt.Axes.hist`.
+
+        Returns
+        -------
+        AxesGrid
+            `AxesGrid` that holds the subplot(s).
+        """
+
+        return plot_chi2_histogram(
+            chi2=self.points,
+            bin_width=bin_width,
+            subplot_groupby=subplot_groupby,
+            kwargs_subplots=kwargs_subplots,
+            kwargs_histogram=kwargs_histogram,
+        )
+
+    def plot_S_E_histogram(
+        self,
+        bin_width: float | None = None,
+        subplot_groupby: DatasetsGroupBy | None = None,
+        kwargs_subplots: dict[str, Any] = {},
+        kwargs_histogram: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_gaussian: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_gaussian_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
+    ) -> AxesGrid:
+        """Plots the `S_E` distribution (see arXiv:1905.06957 eq. 157).
+
+        Parameters
+        ----------
+        bin_width : float | None, optional
+            Width of a bin, by default chosen by `np.histogram`.
+        subplot_groupby : DatasetsGroupBy | None, optional
+            How to group S_E values that are shown in distributions on different subplots, by default None.
+        kwargs_subplots : dict[str, Any], optional
+            Keyword arguments passed to `plt.subplots` through `AxesGrid`.
+        kwargs_histogram : dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments passed to `plt.Axes.hist`.
+        kwargs_gaussian : dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments passed to `plt.Axes.plot` for plotting the standard gaussian.
+        kwargs_fit : dict[str, Any] | list[dict[str, Any]   None], optional
+            Keyword arguments passed to `scipy.optimize.curve_fit` for fitting the gaussian.
+        kwargs_gaussian_fit : dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments passed to `plt.Axes.plot` for plotting the fitted gaussian.
+
+        Returns
+        -------
+        AxesGrid
+            `AxesGrid` that holds the subplot(s)
+        """
+
+        return plot_S_E_histogram(
+            S_E=self.S_E,
+            bin_width=bin_width,
+            subplot_groupby=subplot_groupby,
+            kwargs_subplots=kwargs_subplots,
+            kwargs_histogram=kwargs_histogram,
+            kwargs_gaussian=kwargs_gaussian,
+            kwargs_fit=kwargs_fit,
+            kwargs_gaussian_fit=kwargs_gaussian_fit,
+        )
 
     # TODO: more sophisticated filtering
     # TODO: cuts
