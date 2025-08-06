@@ -35,11 +35,15 @@ from ncteqpy.kinematic_variables import (
     y_min,
 )
 from ncteqpy.labels import nucleus_to_latex
+from ncteqpy.plot.grid import AxesGrid
+from ncteqpy.plot.util import AdditionalLegend
 from ncteqpy.run import Runs
 from ncteqpy.scans import ParameterScan1D, ParameterScan2D
 from ncteqpy.settings import Settings
 
 __all__ = [
+    "AdditionalLegend",
+    "AxesGrid",
     "Chi2",
     "CosPhi",
     "Cuts",
