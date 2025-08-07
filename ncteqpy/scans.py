@@ -983,9 +983,9 @@ class EVScan(ABC, jaml.YAMLWrapper):
         self._num_steps = num_steps[0]
         self._minimum_chi2 = min_chi2[0]
 
-    @abstractmethod
-    def _load_ranges(self) -> None:
-        pass
+#    @abstractmethod
+#    def _load_ranges(self) -> None:
+#        pass
 
     @abstractmethod
     def _load_profile(self) -> None:
@@ -1410,103 +1410,14 @@ class EVScan2D(EVScan):
     ) -> None:
         super().__init__(paths, cache_path, retain_yaml)
 
-    @override
-    def _load_ranges(self) -> None:
-        """Initialize `_parameters_scanned`, `_parameters_scanned_indices`, `_range_upper` and `_range_lower`"""
+    @property
+    def evs_scanned(self) -> list[str]:
+        if self._evs_scanned is None or self._yaml_changed():
+            self._load_profile()
 
-        pattern = jaml.Pattern(
-            {
-                "Scans": {
-                    "EVScans2D": {
-                        None: {
-                            "negDirBound1": None,
-                            "negDirBound2": None,
-                            "posDirBound1": None,
-                            "posDirBound2": None,
-                            "negDirStep1": None,
-                            "negDirStep2": None,
-                            "posDirStep1": None,
-                            "posDirStep2": None,
-                            "zmax": None,
-                            "evIndex1": None,
-                            "evIndex2": None,
-                            "paramValues": None,
-                            "Chi2Values": None,
-                        }
-                    }
-                }
-            }
-        )
+        assert self._evs_scanned is not None
 
-        yaml = cast(
-            dict[str, jaml.YAMLType] | list[tuple[Path, dict[str, jaml.YAMLType]]],
-            self._load_yaml(pattern),
-        )
-
-        if not isinstance(yaml, list):
-            yaml = [(Path(), yaml)]
-
-        ev_indices: list[tuple[int, int]] = []
-        # param_names: list[tuple[str, str]] = []
-        # param_min: dict[str, float] = {}
-
-        ranges: list[list[tuple[list[float], list[float]]]] = []
-        for y in map(lambda x: x[1], yaml):
-
-            for scan in cast(
-                dict[str, dict[str, Any]],
-                jaml.nested_get(y, ["Scans", "EVScans2D"]),
-            ).values():
-                ev_indices_i = cast(
-                    tuple[int, int], (scan["evIndex1"], scan["evIndex2"])
-                )
-                ranges_upper_i = cast(
-                    tuple[float, float], (scan["posDirBound1"], scan["posDirBound2"])
-                )
-                ranges_lower_i = cast(
-                    tuple[float, float], (scan["negDirBound1"], scan["posDirBound2"])
-                )
-
-                #    for i in range(2):
-                #        if not param_names_i[i] in param_min:
-                #            param_min[param_names_i[i]] = param_min_i[i]
-                #        elif param_min[param_names_i[i]] != param_min_i[i]:
-                #            raise ValueError(
-                #                f"Multiple minimum values for parameter {param_names_i[i]}"
-                #            )
-
-                #    # sort the parameter column levels by the parameter indices
-                ev_indices_i, ranges_upper_i, ranges_lower_i = zip(
-                    *sorted(
-                        zip(
-                            ev_indices_i,
-                            ranges_upper_i,
-                            ranges_lower_i,
-                        ),
-                        key=lambda x: x[0],
-                    )
-                )
-
-                ev_indices.append(ev_indices_i)
-                #    param_names.append(param_names_i)
-                ranges.append(list(zip(ranges_lower_i, ranges_upper_i)))
-
-        assert _all_equal(
-            [
-                len(ev_indices),
-                len(ranges),
-            ]
-        )
-
-        # sort the columns by the ev indices
-        ev_indices, ranges = zip(
-            *sorted(
-                zip(ev_indices, ranges),
-                key=lambda x: x[0],
-            )
-        )
-
-        self._evs_scanned = list(ev_indices)
+        return self._evs_scanned
 
     @override
     def _load_profile(self) -> None:
@@ -1617,24 +1528,6 @@ class EVScan2D(EVScan):
             np.array(profile_chi2).T,
             columns=pd.MultiIndex.from_tuples(ev_ids),
         )
-
-    @property
-    def parameters_scanned(self) -> list[tuple[str, str]]:
-        if self._parameters_scanned is None or self._yaml_changed():
-            self._load_ranges()
-
-        assert self._parameters_scanned is not None
-
-        return self._parameters_scanned
-
-    @property
-    def parameters_scanned_indices(self) -> dict[tuple[str, str], int]:
-        if self._parameters_scanned_indices is None or self._yaml_changed():
-            self._load_ranges()
-
-        assert self._parameters_scanned_indices is not None
-
-        return self._parameters_scanned_indices
 
     def plot(
         self,
