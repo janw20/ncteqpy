@@ -26,6 +26,7 @@ def plot_scan_1d(
     dof: int | None = None,
     legend: Literal["true", "false", "last"] = "last",
     plot_total: bool = True,
+    plot_minimum: bool = True, 
     highlight_groups: str | list[str] | None = None,
     highlight_important_groups: int | None = None,
     kwargs_chi2_total: dict[str, Any] | None = None,
@@ -190,6 +191,12 @@ def plot_scan_1d(
                         profile_chi2[ev] - np.ones(len(profile_evs[ev])) * minimum,
                         **kwargs,
                     )
+            
+            if plot_minimum:
+                kwargs_default = {"marker": "*", "color": "black", "zorder": 4}
+                kwargs = update_kwargs(kwargs_default, kwargs_chi2_minimum)
+
+                ax[i].plot(0, 0, **kwargs)
 
             if profile_chi2_groups is not None:
 
