@@ -15,17 +15,17 @@ from ncteqpy.util import update_kwargs
 def plot_scan_1d(
     ax: plt.Axes | Sequence[plt.Axes],
     modus: Literal["Parameter", "EV"],
-    profile_params: pd.DataFrame |None =None,
-    profile_evs: pd.DataFrame|None =None,
-    minimum: pd.DataFrame| float |None =None,
+    profile_params: pd.DataFrame | None = None,
+    profile_evs: pd.DataFrame | None = None,
+    minimum: pd.DataFrame | float | None = None,
     profile_chi2: pd.DataFrame | None = None,
     parameter: str | Sequence[str] | None = None,
-    eigenvector:int | Sequence[int] | None =None,
+    eigenvector: int | Sequence[int] | None = None,
     profile_chi2_groups: pd.DataFrame | None = None,
     groups_labels: dict[str, str] | None = None,
     dof: int | None = None,
-    legend: Literal["true", "false", "last"]= "last",
-    plot_total:bool =True,
+    legend: Literal["true", "false", "last"] = "last",
+    plot_total: bool = True,
     highlight_groups: str | list[str] | None = None,
     highlight_important_groups: int | None = None,
     kwargs_chi2_total: dict[str, Any] | None = None,
@@ -41,18 +41,18 @@ def plot_scan_1d(
             parameter = list(profile_params.columns)
         elif isinstance(parameter, str):
             parameter = [parameter]
-    elif modus =="EV":
+    elif modus == "EV":
         if eigenvector is None:
-            eigenvector=list(profile_evs.columns)
+            eigenvector = list(profile_evs.columns)
         if isinstance(eigenvector, int):
             eigenvector = [eigenvector]
- 
+
     if profile_chi2 is None and profile_chi2_groups is None:
         raise ValueError(
             "Either `profile_chi2` or `profile_chi2_groups` must be provided."
         )
 
-    if modus=="Parameter":
+    if modus == "Parameter":
         if len(ax) != len(parameter):
             raise ValueError(
                 "The number of axes must be equal to the number of parameters."
@@ -86,9 +86,9 @@ def plot_scan_1d(
                 # group -> chi2 value at the minimum parameter
                 chi2_min = pd.Series(
                     [
-                        np.interp(minimum[p], profile_params[p], profile_chi2_groups[p, g])[
-                            0
-                        ]
+                        np.interp(
+                            minimum[p], profile_params[p], profile_chi2_groups[p, g]
+                        )[0]
                         for g in profile_chi2_groups[p]
                     ],
                     index=profile_chi2_groups[p].columns,
@@ -119,7 +119,9 @@ def plot_scan_1d(
                     ):
                         if g in highlight_groups or g in important:
                             label = (
-                                groups_labels.get(g, g) if groups_labels is not None else g
+                                groups_labels.get(g, g)
+                                if groups_labels is not None
+                                else g
                             )
                             color = None
                             zorder = 3
@@ -128,7 +130,9 @@ def plot_scan_1d(
                             color = "gray"
                             zorder = None
                     else:
-                        label = groups_labels.get(g, g) if groups_labels is not None else g
+                        label = (
+                            groups_labels.get(g, g) if groups_labels is not None else g
+                        )
                         color = None
                         zorder = None
 
@@ -141,7 +145,9 @@ def plot_scan_1d(
                     kwargs = update_kwargs(kwargs_default, kwargs_chi2_groups, j)
 
                     ax[i].plot(
-                        profile_params[p], profile_chi2_groups[p, g] - chi2_min[g], **kwargs
+                        profile_params[p],
+                        profile_chi2_groups[p, g] - chi2_min[g],
+                        **kwargs,
                     )  # TODO: option to display data IDs?
 
             if dof is not None:
@@ -152,25 +158,25 @@ def plot_scan_1d(
 
             ax[i].set_xlim(profile_params[p].min(), profile_params[p].max())
 
-            ax[i].set(xlabel=f"${parameters_cj15_py_to_tex[p]}$", ylabel=r"$\Delta \chi^2$")
+            ax[i].set(
+                xlabel=f"${parameters_cj15_py_to_tex[p]}$", ylabel=r"$\Delta \chi^2$"
+            )
             ax[i].grid()
 
             if legend:
                 ax[i].legend()
 
-    if modus=="EV":
+    if modus == "EV":
         if len(ax) != len(eigenvector):
             raise ValueError(
                 "The number of axes must be equal to the number of eigenvectors."
             )
         if not isinstance(minimum, float):
-            raise ValueError(
-                "minimum chi2 is not a float"
-            )            
+            raise ValueError("minimum chi2 is not a float")
         for i, ev in enumerate(eigenvector):
-        
+
             if profile_chi2 is not None:
-            
+
                 kwargs_default = {
                     "color": "black",
                     "label": "Total",
@@ -181,25 +187,22 @@ def plot_scan_1d(
                 if plot_total:
                     ax[i].plot(
                         profile_evs[ev],
-                        profile_chi2[ev]-np.ones(len(profile_evs[ev]))*minimum,
+                        profile_chi2[ev] - np.ones(len(profile_evs[ev])) * minimum,
                         **kwargs,
                     )
-    
-        
+
             if profile_chi2_groups is not None:
-            
+
                 # group -> chi2 value at the minimum parameter
 
                 chi2_min = pd.Series(
                     [
-                        np.interp([0], profile_evs[ev], profile_chi2_groups[ev, g])[
-                            0
-                        ]
+                        np.interp([0], profile_evs[ev], profile_chi2_groups[ev, g])[0]
                         for g in profile_chi2_groups[ev]
                     ],
                     index=profile_chi2_groups[ev].columns,
                 )
-    
+
                 important: pd.Index = (
                     (
                         (profile_chi2_groups[ev])
@@ -212,13 +215,12 @@ def plot_scan_1d(
                     if highlight_important_groups is not None
                     else pd.Index([])
                 )
-    
 
                 if isinstance(highlight_groups, str):
                     highlight_groups = [highlight_groups]
                 elif highlight_groups is None:
                     highlight_groups = []
-    
+
                 for j, g in enumerate(profile_chi2_groups[ev]):
                     if (
                         highlight_groups is not None
@@ -226,7 +228,9 @@ def plot_scan_1d(
                     ):
                         if g in highlight_groups or g in important:
                             label = (
-                                groups_labels.get(g, g) if groups_labels is not None else g
+                                groups_labels.get(g, g)
+                                if groups_labels is not None
+                                else g
                             )
                             color = None
                             zorder = 3
@@ -235,10 +239,12 @@ def plot_scan_1d(
                             color = "gray"
                             zorder = None
                     else:
-                        label = groups_labels.get(g, g) if groups_labels is not None else g
+                        label = (
+                            groups_labels.get(g, g) if groups_labels is not None else g
+                        )
                         color = None
                         zorder = None
-    
+
                     kwargs_default = {
                         "marker": ".",
                         "label": label,
@@ -246,27 +252,28 @@ def plot_scan_1d(
                         "zorder": zorder,
                     }
                     kwargs = update_kwargs(kwargs_default, kwargs_chi2_groups, j)
-    
+
                     ax[i].plot(
-                        profile_evs[ev], profile_chi2_groups[ev, g]- chi2_min[g] , **kwargs
+                        profile_evs[ev],
+                        profile_chi2_groups[ev, g] - chi2_min[g],
+                        **kwargs,
                     )  # TODO: option to display data IDs?
-    
+
             if dof is not None:
                 ax2 = ax[i].secondary_yaxis(
                     "right", functions=(lambda x: x / dof, lambda x: x * dof)
                 )
                 ax2.set_ylabel(r"$\Delta \chi^2 \: / \: N_\text{d.o.f.}$")
-    
+
             ax[i].set_xlim(profile_evs[ev].min(), profile_evs[ev].max())
-    
+
             ax[i].set(xlabel=f"Step in dir. of EV ${ev+1}$", ylabel=r"$\Delta \chi^2$")
             ax[i].grid()
-    
-    
-    if legend=="true":
+
+    if legend == "true":
         for ax_i in ax:
             ax_i.legend()
-    if legend=="last":
+    if legend == "last":
         ax[-1].legend()
 
 
@@ -274,18 +281,18 @@ def plot_scan_2d(
     ax: plt.Axes | Sequence[plt.Axes],
     profile_chi2: pd.DataFrame,
     modus: Literal["Parameter", "EV"],
-    minimum: pd.DataFrame |None= None,
-    profile_params: pd.DataFrame|None =None,
-    profile_evs: pd.DataFrame|None =None,
+    minimum: pd.DataFrame | None = None,
+    profile_params: pd.DataFrame | None = None,
+    profile_evs: pd.DataFrame | None = None,
     parameters: tuple[str, str] | list[tuple[str, str]] | None = None,
     eigenvectors: tuple[int, int] | list[tuple[int, int]] | None = None,
     tolerance: float | None = None,
-    vmax:float=100,
-    draw_contour: bool =True,
-    plot_minimum:bool=True,
-    levels:list |None =None,
-    cbar_scale: Literal["linear", "log"]="linear",
-    colormap:str="Spectral_r",
+    vmax: float = 100,
+    draw_contour: bool = True,
+    plot_minimum: bool = True,
+    levels: list | None = None,
+    cbar_scale: Literal["linear", "log"] = "linear",
+    colormap: str = "Spectral_r",
     **kwargs: Any,
 ) -> None:
 
@@ -297,7 +304,7 @@ def plot_scan_2d(
                     profile_params.columns.get_level_values(1),
                 )
             )
-            
+
         elif isinstance(parameters, tuple):
             parameters = [parameters]
 
@@ -322,13 +329,17 @@ def plot_scan_2d(
             ax_i.set_adjustable("box")
             ax_i.set_box_aspect(1)
 
-            if cbar_scale=="linear":
-                norm = mcolors.TwoSlopeNorm(vcenter=tolerance,vmax=vmax,vmin=0) if tolerance is not None else mcolors.TwoSlopeNorm(vmax/2,vmax=vmax)
+            if cbar_scale == "linear":
+                norm = (
+                    mcolors.TwoSlopeNorm(vcenter=tolerance, vmax=vmax, vmin=0)
+                    if tolerance is not None
+                    else mcolors.TwoSlopeNorm(vmax / 2, vmax=vmax)
+                )
 
-            if cbar_scale=="log":
+            if cbar_scale == "log":
                 norm = mcolors.LogNorm(vmin=1, vmax=vmax) if vmax is not None else None
 
-            cmap=plt.get_cmap(colormap).copy()
+            cmap = plt.get_cmap(colormap).copy()
             cmap.set_over("black")
             image = ax_i.imshow(
                 np.reshape(profile_chi2[p] - minimum["chi2"].iloc[0], (n, n)),
@@ -339,7 +350,7 @@ def plot_scan_2d(
                     profile_params[*p, 1].max(),
                 ),
                 cmap=cmap,
-                norm=norm, # pyright: ignore[reportArgumentType]
+                norm=norm,  # pyright: ignore[reportArgumentType]
                 interpolation="bicubic",
                 origin="lower",
                 aspect="auto",
@@ -356,8 +367,8 @@ def plot_scan_2d(
 
             if draw_contour:
                 if tolerance is not None:
-                    if levels==None:
-                        levels=[tolerance / 2, tolerance, 2 * tolerance]
+                    if levels == None:
+                        levels = [tolerance / 2, tolerance, 2 * tolerance]
                     c = ax_i.contour(
                         np.reshape(profile_params[*p, 0], (n, n)),
                         np.reshape(profile_params[*p, 1], (n, n)),
@@ -365,10 +376,12 @@ def plot_scan_2d(
                         levels=levels,
                         colors="black",
                     )
-                    ax_i.clabel(c, c.levels)  # pyright: ignore[reportAttributeAccessIssue]
+                    ax_i.clabel(
+                        c, c.levels
+                    )  # pyright: ignore[reportAttributeAccessIssue]
                 else:
-                    if levels==None:
-                        levels=[vmax/2]
+                    if levels == None:
+                        levels = [vmax / 2]
                     c = ax_i.contour(
                         np.reshape(profile_params[*p, 0], (n, n)),
                         np.reshape(profile_params[*p, 1], (n, n)),
@@ -376,7 +389,9 @@ def plot_scan_2d(
                         levels=levels,
                         colors="black",
                     )
-                    ax_i.clabel(c, c.levels)     # pyright: ignore[reportAttributeAccessIssue]
+                    ax_i.clabel(
+                        c, c.levels
+                    )  # pyright: ignore[reportAttributeAccessIssue]
 
             if plot_minimum:
                 ax_i.plot(minimum[p[0]], minimum[p[1]], "*", color="black")
@@ -394,8 +409,7 @@ def plot_scan_2d(
                     profile_evs.columns.get_level_values(1),
                 )
             )[::2]
-            
-            
+
         elif isinstance(eigenvectors, tuple):
             eigenvectors = [eigenvectors]
         if isinstance(ax, plt.Axes):
@@ -419,13 +433,17 @@ def plot_scan_2d(
             ax_i.set_adjustable("box")
             ax_i.set_box_aspect(1)
 
-            if cbar_scale=="linear":
-                norm = mcolors.TwoSlopeNorm(vcenter=tolerance,vmax=vmax) if tolerance is not None else mcolors.TwoSlopeNorm(vmax/2,vmax=vmax)
+            if cbar_scale == "linear":
+                norm = (
+                    mcolors.TwoSlopeNorm(vcenter=tolerance, vmax=vmax)
+                    if tolerance is not None
+                    else mcolors.TwoSlopeNorm(vmax / 2, vmax=vmax)
+                )
 
-            if cbar_scale=="log":
+            if cbar_scale == "log":
                 norm = mcolors.LogNorm(vmin=1, vmax=vmax) if vmax is not None else None
 
-            cmap=plt.get_cmap(colormap).copy()
+            cmap = plt.get_cmap(colormap).copy()
             cmap.set_over("black")
             image = ax_i.imshow(
                 np.reshape(profile_chi2[e] - minimum, (n, n)),
@@ -443,19 +461,15 @@ def plot_scan_2d(
                 **kwargs,
             )
 
-            cb = ax_i.figure.colorbar(
-                image,
-                ax=ax_i,
-                extend="max"
-            )
-            cb.ax.set_ylim(0,vmax)
+            cb = ax_i.figure.colorbar(image, ax=ax_i, extend="max")
+            cb.ax.set_ylim(0, vmax)
             cb.set_label(r"$\Delta \chi^2$")
             cb.ax.set_yscale(cbar_scale)
-            
+
             if draw_contour:
                 if tolerance is not None:
-                    if levels==None:
-                        levels=[tolerance / 2, tolerance, 2 * tolerance]
+                    if levels == None:
+                        levels = [tolerance / 2, tolerance, 2 * tolerance]
                     c = ax_i.contour(
                         np.reshape(profile_evs[*e, 2], (n, n)),
                         np.reshape(profile_evs[*e, 1], (n, n)),
@@ -463,10 +477,12 @@ def plot_scan_2d(
                         levels=levels,
                         colors="black",
                     )
-                    ax_i.clabel(c, c.levels)  # pyright: ignore[reportAttributeAccessIssue]
+                    ax_i.clabel(
+                        c, c.levels
+                    )  # pyright: ignore[reportAttributeAccessIssue]
                 else:
-                    if levels==None:
-                        levels=[vmax/2]
+                    if levels == None:
+                        levels = [vmax / 2]
                     c = ax_i.contour(
                         np.reshape(profile_evs[*e, 2], (n, n)),
                         np.reshape(profile_evs[*e, 1], (n, n)),
@@ -474,7 +490,7 @@ def plot_scan_2d(
                         levels=levels,
                         colors="black",
                     )
-                    ax_i.clabel(c, c.levels)                
+                    ax_i.clabel(c, c.levels)
             if plot_minimum:
                 ax_i.plot(0, 0, "*", color="black")
 
