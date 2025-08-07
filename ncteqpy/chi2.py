@@ -51,7 +51,7 @@ class Chi2(jaml.YAMLWrapper):
 
     def __init__(
         self,
-        paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
+        paths: str | os.PathLike[str],
         datasets: data.Datasets,
         cache_path: str | os.PathLike[str] = ".jaml_cache",
         retain_yaml: bool = False,
@@ -87,6 +87,8 @@ class Chi2(jaml.YAMLWrapper):
                 }
             )
             yaml = self._load_yaml(pattern)
+
+            assert isinstance(yaml, dict)
 
             snapshots = cast(
                 list[dict[str, object]], jaml.nested_get(yaml, ["Chi2Fcn", "Snapshots"])
@@ -126,6 +128,8 @@ class Chi2(jaml.YAMLWrapper):
                 {"Chi2Fcn": {"Snapshots": [{"perPointBreakdown": None}]}}
             )
             yaml = self._load_yaml(pattern)
+
+            assert isinstance(yaml, dict)
 
             snapshots = cast(
                 list[dict[str, object]], jaml.nested_get(yaml, ["Chi2Fcn", "Snapshots"])
@@ -177,6 +181,8 @@ class Chi2(jaml.YAMLWrapper):
             )
             yaml = self._load_yaml(pattern)
 
+            assert isinstance(yaml, dict)
+
             index_of_input_params = cast(
                 list[int], jaml.nested_get(yaml, ["Chi2Fcn", "IndexOfInputParams"])
             )
@@ -203,6 +209,8 @@ class Chi2(jaml.YAMLWrapper):
             )
             yaml = self._load_yaml(pattern)
 
+            assert isinstance(yaml, dict)
+
             index_of_input_params = cast(
                 list[int], jaml.nested_get(yaml, ["Chi2Fcn", "IndexOfInputParams"])
             )
@@ -227,6 +235,8 @@ class Chi2(jaml.YAMLWrapper):
             pattern = jaml.Pattern({"Chi2Fcn": {"LastParams": None}})
             yaml = self._load_yaml(pattern)
 
+            assert isinstance(yaml, dict)
+
             self._parameters_last_values = np.array(
                 cast(list[float], jaml.nested_get(yaml, ["Chi2Fcn", "LastParams"]))
             )
@@ -238,6 +248,8 @@ class Chi2(jaml.YAMLWrapper):
         if self._parameters_input_values is None or self._yaml_changed():
             pattern = jaml.Pattern({"Chi2Fcn": {"InputParametrizationParams": None}})
             yaml = self._load_yaml(pattern)
+
+            assert isinstance(yaml, dict)
 
             input_parametrization_params = cast(
                 dict[str, float],
@@ -258,6 +270,8 @@ class Chi2(jaml.YAMLWrapper):
             )
             yaml = self._load_yaml(pattern)
 
+            assert isinstance(yaml, dict)
+
             input_parametrization_params_at_min = cast(
                 dict[str, float],
                 jaml.nested_get(yaml, ["Chi2Fcn", "InputParametrizationParamsAtMin"]),
@@ -275,6 +289,8 @@ class Chi2(jaml.YAMLWrapper):
             pattern = jaml.Pattern({"Chi2Fcn": {"LastValue": None}})
             yaml = self._load_yaml(pattern)
 
+            assert isinstance(yaml, dict)
+
             self._last_value = cast(
                 float, jaml.nested_get(yaml, ["Chi2Fcn", "LastValue"])
             )
@@ -287,6 +303,8 @@ class Chi2(jaml.YAMLWrapper):
             pattern = jaml.Pattern({"Chi2Fcn": {"LastValueWithPenalty": None}})
             yaml = self._load_yaml(pattern)
 
+            assert isinstance(yaml, dict)
+
             self._last_value_with_penalty = cast(
                 float, jaml.nested_get(yaml, ["Chi2Fcn", "LastValueWithPenalty"])
             )
@@ -298,6 +316,8 @@ class Chi2(jaml.YAMLWrapper):
         if self._last_value_per_data is None or self._yaml_changed():
             pattern = jaml.Pattern({"Chi2Fcn": {"LastValuePerData": None}})
             yaml = self._load_yaml(pattern)
+
+            assert isinstance(yaml, dict)
 
             self._last_value_per_data = pd.Series(
                 cast(
