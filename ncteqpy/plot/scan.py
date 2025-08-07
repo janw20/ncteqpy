@@ -167,7 +167,7 @@ def plot_scan_1d(
             raise ValueError(
                 "minimum chi2 is not a float"
             )            
-        for i, p in enumerate(eigenvector):
+        for i, ev in enumerate(eigenvector):
         
             if profile_chi2 is not None:
             
@@ -180,8 +180,8 @@ def plot_scan_1d(
                 kwargs = update_kwargs(kwargs_default, kwargs_chi2_total)
                 if plot_total:
                     ax[i].plot(
-                        profile_evs[p],
-                        profile_chi2[p]-np.ones(len(profile_evs[p]))*minimum,
+                        profile_evs[ev],
+                        profile_chi2[ev]-np.ones(len(profile_evs[ev]))*minimum,
                         **kwargs,
                     )
     
@@ -192,17 +192,17 @@ def plot_scan_1d(
 
                 chi2_min = pd.Series(
                     [
-                        np.interp([0], profile_evs[p], profile_chi2_groups[p, g])[
+                        np.interp([0], profile_evs[ev], profile_chi2_groups[ev, g])[
                             0
                         ]
-                        for g in profile_chi2_groups[p]
+                        for g in profile_chi2_groups[ev]
                     ],
-                    index=profile_chi2_groups[p].columns,
+                    index=profile_chi2_groups[ev].columns,
                 )
     
                 important: pd.Index = (
                     (
-                        (profile_chi2_groups[p])
+                        (profile_chi2_groups[ev])
                         .iloc[[0, -1]]
                         .max(axis=0)
                         .sort_values(ascending=False)
@@ -219,7 +219,7 @@ def plot_scan_1d(
                 elif highlight_groups is None:
                     highlight_groups = []
     
-                for j, g in enumerate(profile_chi2_groups[p]):
+                for j, g in enumerate(profile_chi2_groups[ev]):
                     if (
                         highlight_groups is not None
                         or highlight_important_groups is not None
@@ -248,7 +248,7 @@ def plot_scan_1d(
                     kwargs = update_kwargs(kwargs_default, kwargs_chi2_groups, j)
     
                     ax[i].plot(
-                        profile_evs[p], profile_chi2_groups[p, g]- chi2_min[g] , **kwargs
+                        profile_evs[ev], profile_chi2_groups[ev, g]- chi2_min[g] , **kwargs
                     )  # TODO: option to display data IDs?
     
             if dof is not None:
@@ -257,9 +257,9 @@ def plot_scan_1d(
                 )
                 ax2.set_ylabel(r"$\Delta \chi^2 \: / \: N_\text{d.o.f.}$")
     
-            ax[i].set_xlim(profile_evs[p].min(), profile_evs[p].max())
+            ax[i].set_xlim(profile_evs[ev].min(), profile_evs[ev].max())
     
-            ax[i].set(xlabel=f"Step in dir. of EV ${p}$", ylabel=r"$\Delta \chi^2$")
+            ax[i].set(xlabel=f"Step in dir. of EV ${ev+1}$", ylabel=r"$\Delta \chi^2$")
             ax[i].grid()
     
     
@@ -280,11 +280,11 @@ def plot_scan_2d(
     parameters: tuple[str, str] | list[tuple[str, str]] | None = None,
     eigenvectors: tuple[int, int] | list[tuple[int, int]] | None = None,
     tolerance: float | None = None,
+    vmax:float=100,
     draw_contour: bool =True,
     plot_minimum:bool=True,
     levels:list |None =None,
     cbar_scale: Literal["linear", "log"]="linear",
-    vmax:float=1000,
     colormap:str="Spectral_r",
     **kwargs: Any,
 ) -> None:
@@ -322,11 +322,14 @@ def plot_scan_2d(
             ax_i.set_adjustable("box")
             ax_i.set_box_aspect(1)
 
-            if not norm_target:
-                norm = mcolors.TwoSlopeNorm(tolerance) if tolerance is not None else None
-            else:
-                norm = mcolors.TwoSlopeNorm(norm_target)
+            if cbar_scale=="linear":
+                norm = mcolors.TwoSlopeNorm(vcenter=tolerance,vmax=vmax,vmin=0) if tolerance is not None else mcolors.TwoSlopeNorm(vmax/2,vmax=vmax)
 
+            if cbar_scale=="log":
+                norm = mcolors.LogNorm(vmin=1, vmax=vmax) if vmax is not None else None
+
+            cmap=plt.get_cmap(colormap).copy()
+            cmap.set_over("black")
             image = ax_i.imshow(
                 np.reshape(profile_chi2[p] - minimum["chi2"].iloc[0], (n, n)),
                 extent=(
@@ -335,8 +338,8 @@ def plot_scan_2d(
                     profile_params[*p, 1].min(),
                     profile_params[*p, 1].max(),
                 ),
-                cmap="Spectral_r",
-                norm=norm,  # pyright: ignore[reportArgumentType]
+                cmap=cmap,
+                norm=norm, # pyright: ignore[reportArgumentType]
                 interpolation="bicubic",
                 origin="lower",
                 aspect="auto",
@@ -349,17 +352,31 @@ def plot_scan_2d(
                 extend="max",
             )
             cb.set_label(r"$\Delta \chi^2$")
-            cb.ax.set_yscale("linear")
+            cb.ax.set_yscale(cbar_scale)
 
-            if tolerance is not None:
-                c = ax_i.contour(
-                    np.reshape(profile_params[*p, 0], (n, n)),
-                    np.reshape(profile_params[*p, 1], (n, n)),
-                    np.reshape(profile_chi2[p] - minimum["chi2"].iloc[0], (n, n)),
-                    levels=[tolerance / 2, tolerance, 2 * tolerance],
-                    colors="black",
-                )
-                ax_i.clabel(c, c.levels)  # pyright: ignore[reportAttributeAccessIssue]
+            if draw_contour:
+                if tolerance is not None:
+                    if levels==None:
+                        levels=[tolerance / 2, tolerance, 2 * tolerance]
+                    c = ax_i.contour(
+                        np.reshape(profile_params[*p, 0], (n, n)),
+                        np.reshape(profile_params[*p, 1], (n, n)),
+                        np.reshape(profile_chi2[p] - minimum["chi2"].iloc[0], (n, n)),
+                        levels=levels,
+                        colors="black",
+                    )
+                    ax_i.clabel(c, c.levels)  # pyright: ignore[reportAttributeAccessIssue]
+                else:
+                    if levels==None:
+                        levels=[vmax/2]
+                    c = ax_i.contour(
+                        np.reshape(profile_params[*p, 0], (n, n)),
+                        np.reshape(profile_params[*p, 1], (n, n)),
+                        np.reshape(profile_chi2[p] - minimum["chi2"].iloc[0], (n, n)),
+                        levels=levels,
+                        colors="black",
+                    )
+                    ax_i.clabel(c, c.levels)     # pyright: ignore[reportAttributeAccessIssue]
 
             if plot_minimum:
                 ax_i.plot(minimum[p[0]], minimum[p[1]], "*", color="black")
@@ -403,28 +420,29 @@ def plot_scan_2d(
             ax_i.set_box_aspect(1)
 
             if cbar_scale=="linear":
-                norm = mcolors.TwoSlopeNorm(tolerance) if tolerance is not None else None
+                norm = mcolors.TwoSlopeNorm(vcenter=tolerance,vmax=vmax) if tolerance is not None else mcolors.TwoSlopeNorm(vmax/2,vmax=vmax)
 
             if cbar_scale=="log":
-                norm = mcolors.LogNorm(vmin=1, vmax=vmax) if tolerance is not None else None
+                norm = mcolors.LogNorm(vmin=1, vmax=vmax) if vmax is not None else None
+
             cmap=plt.get_cmap(colormap).copy()
             cmap.set_over("black")
             image = ax_i.imshow(
                 np.reshape(profile_chi2[e] - minimum, (n, n)),
                 extent=(
-                    np.array(profile_evs[*e, 1]).min(),
-                    np.array(profile_evs[*e, 1]).max(),
                     np.array(profile_evs[*e, 2]).min(),
                     np.array(profile_evs[*e, 2]).max(),
+                    np.array(profile_evs[*e, 1]).min(),
+                    np.array(profile_evs[*e, 1]).max(),
                 ),
                 cmap=cmap,
                 norm=norm,  # pyright: ignore[reportArgumentType]
-                interpolation="bilinear",
+                interpolation="bicubic",
                 origin="lower",
-                #aspect="equal",
+                aspect="auto",
                 **kwargs,
             )
-            #image = ax_i.pcolormesh(X, Y, np.reshape(profile_chi2[e] - minimum, (n, n)), shading='auto')
+
             cb = ax_i.figure.colorbar(
                 image,
                 ax=ax_i,
@@ -446,11 +464,21 @@ def plot_scan_2d(
                         colors="black",
                     )
                     ax_i.clabel(c, c.levels)  # pyright: ignore[reportAttributeAccessIssue]
-
+                else:
+                    if levels==None:
+                        levels=[vmax/2]
+                    c = ax_i.contour(
+                        np.reshape(profile_evs[*e, 2], (n, n)),
+                        np.reshape(profile_evs[*e, 1], (n, n)),
+                        np.reshape(profile_chi2[e] - minimum, (n, n)),
+                        levels=levels,
+                        colors="black",
+                    )
+                    ax_i.clabel(c, c.levels)                
             if plot_minimum:
                 ax_i.plot(0, 0, "*", color="black")
 
             ax_i.set(
-                xlabel=f"EV {e[0]}",
-                ylabel=f"EV {e[1]}",
+                xlabel=f"EV {e[1]}",
+                ylabel=f"EV {e[0]}",
             )

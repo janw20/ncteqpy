@@ -481,7 +481,7 @@ class ParameterScan1D(ParameterScan):
         groups_labels: dict[str, str] | None = None,
         highlight_groups: str | list[str] | None = None,
         highlight_important_groups: int | None = None,
-        legend: bool = True,
+        legend: Literal["true", "last", "false"]="last",
         kwargs_chi2_total: dict[str, Any] | None = None,
         kwargs_chi2_minimum: dict[str, Any] | None = None,
         kwargs_chi2_groups: dict[str, Any] | list[dict[str, Any] | None] | None = None,
@@ -834,6 +834,13 @@ class ParameterScan2D(ParameterScan):
         self,
         ax: plt.Axes | Sequence[plt.Axes],
         parameters: tuple[str, str] | list[tuple[str, str]] | None = None,
+        draw_contour:bool= True,
+        plot_minimum:bool= True,
+        levels:list |None =None,
+        cbar_scale: Literal["linear", "log"]="linear",
+        vmax:float=100,
+        colormap:str="Spectral_r",
+        tolerance:float|None=None,
         **kwargs: Any,
     ) -> None:
 
@@ -847,7 +854,13 @@ class ParameterScan2D(ParameterScan):
             parameters=parameters,
             modus="Parameter",
             minimum=minimum,
-            tolerance=self.target_delta_chi2,
+            tolerance=tolerance,
+            draw_contour=draw_contour,
+            levels=levels,
+            plot_minimum=plot_minimum,
+            cbar_scale=cbar_scale,
+            vmax=vmax,
+            colormap=colormap,
             **kwargs,
         )
 
@@ -1570,10 +1583,10 @@ class EVScan2D(EVScan):
                 ]
 
                 ev_ids.append(ev_i)
-                print(profile_evs_i[0])
+
                 profile_evs_i_sorted=[sorted(profile_evs_i[0], key=lambda x: (x[0],x[1]))]
                 profile_evs.append(profile_evs_i_sorted)
-                print([sub for sub in profile_evs_i[0]])
+
                 	
                 profile_chi2_i_sorted = [
                     chi2 for _, chi2 in sorted(
@@ -1593,7 +1606,6 @@ class EVScan2D(EVScan):
         #     )
         # )
 
-        print(profile_evs)
         self._profile_evs =pd.DataFrame(
             [list(np.array([y[i] for x in profile_evs for y in x]).flatten()) for i in range(len(profile_evs[0][0]))],
             columns=pd.MultiIndex.from_tuples(
@@ -1639,13 +1651,12 @@ class EVScan2D(EVScan):
         cbar_scale: Literal["linear", "log"]="linear",
         vmax:float=1000,
         colormap:str="Spectral_r",
-        tolarance:float|None=None,
+        tolerance:float|None=None,
         **kwargs: Any,
     ) -> None:
         
+        self._load_profile()
         minimum = self.minimum_chi2
-        if not tolarance:
-            tolerance=self.target_delta_chi2
 
         plot_scan_2d(
             ax=ax,
@@ -1654,7 +1665,7 @@ class EVScan2D(EVScan):
             eigenvectors=eigenvectors,
             modus="EV",
             minimum=minimum,
-            tolerance=tolarance,
+            tolerance=tolerance,
             draw_contour=draw_contour,
             levels=levels,
             plot_minimum=plot_minimum,
