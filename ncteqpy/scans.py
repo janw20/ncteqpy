@@ -1096,76 +1096,10 @@ class EVScan1D(EVScan):
     ) -> None:
         super().__init__(paths, cache_path, retain_yaml)
 
-    @override
-    def _load_ranges(self) -> None:
-        """Initialize `_evs_scanned`, `_evs_scanned_indices` and `_evs_range`"""
-
-        pattern = jaml.Pattern(
-            {
-                "Scans": {
-                    "EVScans": [
-                        {
-                            "evIndex": None,
-                            "negDirBound": None,
-                            "posDirBound": None,
-                            "posDirStep": None,
-                            "negDirStep": None,
-                            "zMax": None,
-                        }
-                    ]
-                }
-            }
-        )
-        yaml = cast(
-            dict[str, jaml.YAMLType] | list[tuple[Path, dict[str, jaml.YAMLType]]],
-            self._load_yaml(pattern),
-        )
-
-        if not isinstance(yaml, list):
-            yaml = [(Path(), yaml)]
-
-        ev_ids: list[int] = []
-        ranges: list[list[float]] = []
-
-        for _, y in yaml:
-
-            for scan in cast(
-                list[dict[str, Any]],
-                jaml.nested_get(y, ["Scans", "EVScans"]),
-            ):
-                ev_ids_i = cast(int, scan["evIndex"])
-                ranges_upper_i = cast(float, scan["posDirBound"])
-                ranges_lower_i = cast(float, scan["negDirBound"])
-
-                ev_ids.append(ev_ids_i)
-                ranges.append([ranges_lower_i, ranges_upper_i])
-
-        assert _all_equal(
-            [
-                len(ev_ids),
-                len(ranges),
-            ]
-        )
-
-        for i in ev_ids:
-            # check for duplicates
-            if ev_ids.count(i) > 1:
-                raise ValueError(f"Duplicate eigenvector (index {i})")
-
-        # sort the columns by the parameter indices
-        ev_ids, ranges = zip(
-            *sorted(
-                zip(ev_ids, ranges),
-                key=lambda x: x[0],
-            )
-        )
-
-        self._evs_scanned = list(ev_ids)
-
     @property
     def evs_scanned(self) -> list[str]:
         if self._evs_scanned is None or self._yaml_changed():
-            self._load_ranges()
+            self._load_profile()
 
         assert self._evs_scanned is not None
 
@@ -1301,6 +1235,7 @@ class EVScan1D(EVScan):
         groups_labels: dict[str, str] | None = None,
         highlight_groups: str | list[str] | None = None,
         highlight_important_groups: int | None = None,
+        plot_minimum: bool = True, 
         legend: Literal["true", "false", "last"] = "last",
         kwargs_chi2_total: dict[str, Any] | None = None,
         kwargs_chi2_minimum: dict[str, Any] | None = None,
@@ -1355,6 +1290,7 @@ class EVScan1D(EVScan):
             eigenvector=eigenvector,
             modus="EV",
             minimum=minimum,
+            plot_minimum= plot_minimum, 
             profile_chi2_groups=profile_chi2_groups,
             groups_labels=data_groups_labels,
             legend=legend,
