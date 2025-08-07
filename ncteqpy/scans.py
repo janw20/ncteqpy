@@ -481,7 +481,7 @@ class ParameterScan1D(ParameterScan):
         groups_labels: dict[str, str] | None = None,
         highlight_groups: str | list[str] | None = None,
         highlight_important_groups: int | None = None,
-        legend: Literal["true", "last", "false"]="last",
+        legend: Literal["true", "last", "false"] = "last",
         kwargs_chi2_total: dict[str, Any] | None = None,
         kwargs_chi2_minimum: dict[str, Any] | None = None,
         kwargs_chi2_groups: dict[str, Any] | list[dict[str, Any] | None] | None = None,
@@ -834,13 +834,13 @@ class ParameterScan2D(ParameterScan):
         self,
         ax: plt.Axes | Sequence[plt.Axes],
         parameters: tuple[str, str] | list[tuple[str, str]] | None = None,
-        draw_contour:bool= True,
-        plot_minimum:bool= True,
-        levels:list |None =None,
-        cbar_scale: Literal["linear", "log"]="linear",
-        vmax:float=100,
-        colormap:str="Spectral_r",
-        tolerance:float|None=None,
+        draw_contour: bool = True,
+        plot_minimum: bool = True,
+        levels: list | None = None,
+        cbar_scale: Literal["linear", "log"] = "linear",
+        vmax: float = 100,
+        colormap: str = "Spectral_r",
+        tolerance: float | None = None,
         **kwargs: Any,
     ) -> None:
 
@@ -863,6 +863,7 @@ class ParameterScan2D(ParameterScan):
             colormap=colormap,
             **kwargs,
         )
+
 
 class EVScan(ABC, jaml.YAMLWrapper):
     """Abstract base class for eigenvector scans. Subclasses must override `_load_ranges` and `_load_profile`, and should implement the properties `evs_scanned`"""
@@ -1044,7 +1045,6 @@ class EVScan(ABC, jaml.YAMLWrapper):
 
         return self._minimum_chi2
 
-
     @property
     def parameters_range(self) -> pd.DataFrame:
         if self._parameters_range is None or self._yaml_changed():
@@ -1080,7 +1080,7 @@ class EVScan(ABC, jaml.YAMLWrapper):
         assert self._profile_chi2_per_data is not None
 
         return self._profile_chi2_per_data
-    
+
 
 class EVScan1D(EVScan):
 
@@ -1137,10 +1137,8 @@ class EVScan1D(EVScan):
                 ranges_upper_i = cast(float, scan["posDirBound"])
                 ranges_lower_i = cast(float, scan["negDirBound"])
 
-
                 ev_ids.append(ev_ids_i)
                 ranges.append([ranges_lower_i, ranges_upper_i])
-
 
         assert _all_equal(
             [
@@ -1164,7 +1162,6 @@ class EVScan1D(EVScan):
 
         self._evs_scanned = list(ev_ids)
 
-
     @property
     def evs_scanned(self) -> list[str]:
         if self._evs_scanned is None or self._yaml_changed():
@@ -1184,7 +1181,7 @@ class EVScan1D(EVScan):
                     "EVScans": [
                         {
                             "profile": None,
-                            "evIndex":None,
+                            "evIndex": None,
                             "snapshots": [
                                 {
                                     "par": None,
@@ -1259,7 +1256,7 @@ class EVScan1D(EVScan):
             )
         )
         self._profile_evs = pd.DataFrame(
-            np.array(profile_evs).T ,
+            np.array(profile_evs).T,
             columns=pd.Index(evs, name="eigenvector"),
         )
         self._profile_chi2 = pd.DataFrame(
@@ -1304,7 +1301,7 @@ class EVScan1D(EVScan):
         groups_labels: dict[str, str] | None = None,
         highlight_groups: str | list[str] | None = None,
         highlight_important_groups: int | None = None,
-        legend: Literal["true", "false", "last"]= "last",
+        legend: Literal["true", "false", "last"] = "last",
         kwargs_chi2_total: dict[str, Any] | None = None,
         kwargs_chi2_minimum: dict[str, Any] | None = None,
         kwargs_chi2_groups: dict[str, Any] | list[dict[str, Any] | None] | None = None,
@@ -1368,6 +1365,8 @@ class EVScan1D(EVScan):
             kwargs_chi2_groups=kwargs_chi2_groups,
             **kwargs,
         )
+
+
 #
 #
 class EVScan2D(EVScan):
@@ -1391,10 +1390,10 @@ class EVScan2D(EVScan):
                         "negDirStep1": None,
                         "negDirStep2": None,
                         "posDirStep1": None,
-                        "posDirStep2": None,  
-                        "zmax":None,
-                        "evIndex1":None,
-                        "evIndex2":None,                          
+                        "posDirStep2": None,
+                        "zmax": None,
+                        "evIndex1": None,
+                        "evIndex2": None,
                         "paramValues": None,
                         "Chi2Values": None,
                     },
@@ -1427,10 +1426,10 @@ class EVScan2D(EVScan):
                             "negDirStep1": None,
                             "negDirStep2": None,
                             "posDirStep1": None,
-                            "posDirStep2": None,  
-                            "zmax":None,
-                            "evIndex1":None,
-                            "evIndex2":None,                          
+                            "posDirStep2": None,
+                            "zmax": None,
+                            "evIndex1": None,
+                            "evIndex2": None,
                             "paramValues": None,
                             "Chi2Values": None,
                         }
@@ -1448,8 +1447,8 @@ class EVScan2D(EVScan):
             yaml = [(Path(), yaml)]
 
         ev_indices: list[tuple[int, int]] = []
-        #param_names: list[tuple[str, str]] = []
-        #param_min: dict[str, float] = {}
+        # param_names: list[tuple[str, str]] = []
+        # param_min: dict[str, float] = {}
 
         ranges: list[list[tuple[list[float], list[float]]]] = []
         for y in map(lambda x: x[1], yaml):
@@ -1468,15 +1467,15 @@ class EVScan2D(EVScan):
                     tuple[float, float], (scan["negDirBound1"], scan["posDirBound2"])
                 )
 
-            #    for i in range(2):
-            #        if not param_names_i[i] in param_min:
-            #            param_min[param_names_i[i]] = param_min_i[i]
-            #        elif param_min[param_names_i[i]] != param_min_i[i]:
-            #            raise ValueError(
-            #                f"Multiple minimum values for parameter {param_names_i[i]}"
-            #            )
+                #    for i in range(2):
+                #        if not param_names_i[i] in param_min:
+                #            param_min[param_names_i[i]] = param_min_i[i]
+                #        elif param_min[param_names_i[i]] != param_min_i[i]:
+                #            raise ValueError(
+                #                f"Multiple minimum values for parameter {param_names_i[i]}"
+                #            )
 
-            #    # sort the parameter column levels by the parameter indices
+                #    # sort the parameter column levels by the parameter indices
                 ev_indices_i, ranges_upper_i, ranges_lower_i = zip(
                     *sorted(
                         zip(
@@ -1489,7 +1488,7 @@ class EVScan2D(EVScan):
                 )
 
                 ev_indices.append(ev_indices_i)
-            #    param_names.append(param_names_i)
+                #    param_names.append(param_names_i)
                 ranges.append(list(zip(ranges_lower_i, ranges_upper_i)))
 
         assert _all_equal(
@@ -1498,7 +1497,6 @@ class EVScan2D(EVScan):
                 len(ranges),
             ]
         )
-
 
         # sort the columns by the ev indices
         ev_indices, ranges = zip(
@@ -1510,7 +1508,6 @@ class EVScan2D(EVScan):
 
         self._evs_scanned = list(ev_indices)
 
-
     @override
     def _load_profile(self) -> None:
         """Initialize `_profile_evs` and `_profile_chi2`"""
@@ -1519,8 +1516,8 @@ class EVScan2D(EVScan):
             {
                 "Scans": {
                     "EVScans2D": [
-                            {
-                            "profile":None,
+                        {
+                            "profile": None,
                             "negDirBound1": None,
                             "negDirBound2": None,
                             "posDirBound1": None,
@@ -1528,10 +1525,10 @@ class EVScan2D(EVScan):
                             "negDirStep1": None,
                             "negDirStep2": None,
                             "posDirStep1": None,
-                            "posDirStep2": None,  
-                            "zmax":None,
-                            "evIndex1":None,
-                            "evIndex2":None,                          
+                            "posDirStep2": None,
+                            "zmax": None,
+                            "evIndex1": None,
+                            "evIndex2": None,
                             "paramValues": None,
                             "Chi2Values": None,
                         }
@@ -1548,11 +1545,11 @@ class EVScan2D(EVScan):
         if not isinstance(yaml, list):
             yaml = [(Path(), yaml)]
 
-        ev_ids: list[tuple[int,int]] = []
-        #ranges: list[list[float]] = []
-        #params: list[tuple[str, str]] = []
-        #profile_params: list[list[float]] = []
-        profile_evs: list[list[tuple[tuple[float,float],float]]]= []
+        ev_ids: list[tuple[int, int]] = []
+        # ranges: list[list[float]] = []
+        # params: list[tuple[str, str]] = []
+        # profile_params: list[list[float]] = []
+        profile_evs: list[list[tuple[tuple[float, float], float]]] = []
         profile_chi2: list[list[float]] = []
         for y in map(lambda x: x[1], yaml):
 
@@ -1561,18 +1558,14 @@ class EVScan2D(EVScan):
                 jaml.nested_get(y, ["Scans", "EVScans2D"]),
             ):
 
-                ev_i = cast(
-                    tuple[int,int], (scan["evIndex1"], scan["evIndex2"])
-                )
+                ev_i = cast(tuple[int, int], (scan["evIndex1"], scan["evIndex2"]))
                 profile_evs_i = list(
                     map(
                         list,
                         zip(
                             *(
                                 y
-                                for x in cast(
-                                    list[list[list[int]]], scan["profile"]
-                                )
+                                for x in cast(list[list[list[int]]], scan["profile"])
                                 for y in x
                             )
                         ),
@@ -1584,19 +1577,22 @@ class EVScan2D(EVScan):
 
                 ev_ids.append(ev_i)
 
-                profile_evs_i_sorted=[sorted(profile_evs_i[0], key=lambda x: (x[0],x[1]))]
+                profile_evs_i_sorted = [
+                    sorted(profile_evs_i[0], key=lambda x: (x[0], x[1]))
+                ]
                 profile_evs.append(profile_evs_i_sorted)
 
-                	
                 profile_chi2_i_sorted = [
-                    chi2 for _, chi2 in sorted(
+                    chi2
+                    for _, chi2 in sorted(
                         zip(profile_evs_i[0], profile_chi2_i),
-                        key=lambda pair: (pair[0][0], pair[0][1])
-                    )]
+                        key=lambda pair: (pair[0][0], pair[0][1]),
+                    )
+                ]
 
-                #profile_chi2_i_sorted=[x for _, x in sorted(zip([sub[1] for sub in profile_evs_i[0]], profile_chi2_i))]
+                # profile_chi2_i_sorted=[x for _, x in sorted(zip([sub[1] for sub in profile_evs_i[0]], profile_chi2_i))]
                 profile_chi2.append(profile_chi2_i_sorted)
-        assert _all_equal([len(ev_ids),  len(profile_chi2)])
+        assert _all_equal([len(ev_ids), len(profile_chi2)])
         self._evs_scanned = ev_ids
         # sort the columns by the parameter indices
         # ev_ids,  profile_chi2 = zip(
@@ -1606,22 +1602,21 @@ class EVScan2D(EVScan):
         #     )
         # )
 
-        self._profile_evs =pd.DataFrame(
-            [list(np.array([y[i] for x in profile_evs for y in x]).flatten()) for i in range(len(profile_evs[0][0]))],
+        self._profile_evs = pd.DataFrame(
+            [
+                list(np.array([y[i] for x in profile_evs for y in x]).flatten())
+                for i in range(len(profile_evs[0][0]))
+            ],
             columns=pd.MultiIndex.from_tuples(
-                [(p1, p2, i) for p1, p2 in ev_ids for i in range(1,3)],
+                [(p1, p2, i) for p1, p2 in ev_ids for i in range(1, 3)],
                 names=("EV1", "EV2", "parameter_index"),
             ),
         )
 
         self._profile_chi2 = pd.DataFrame(
-
             np.array(profile_chi2).T,
-            columns=pd.MultiIndex.from_tuples(
-                ev_ids
-            ),
+            columns=pd.MultiIndex.from_tuples(ev_ids),
         )
-    
 
     @property
     def parameters_scanned(self) -> list[tuple[str, str]]:
@@ -1645,16 +1640,16 @@ class EVScan2D(EVScan):
         self,
         ax: plt.Axes | Sequence[plt.Axes],
         eigenvectors: tuple[int, int] | list[tuple[int, int]] | None = None,
-        draw_contour:bool= True,
-        plot_minimum:bool= True,
-        levels:list |None =None,
-        cbar_scale: Literal["linear", "log"]="linear",
-        vmax:float=1000,
-        colormap:str="Spectral_r",
-        tolerance:float|None=None,
+        draw_contour: bool = True,
+        plot_minimum: bool = True,
+        levels: list | None = None,
+        cbar_scale: Literal["linear", "log"] = "linear",
+        vmax: float = 1000,
+        colormap: str = "Spectral_r",
+        tolerance: float | None = None,
         **kwargs: Any,
     ) -> None:
-        
+
         self._load_profile()
         minimum = self.minimum_chi2
 
