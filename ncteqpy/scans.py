@@ -1189,6 +1189,7 @@ class EVScan1D(EVScan):
                 key=lambda x: self.ev_all_indices[x[0]],
             )
         )
+        self._evs_scanned = evs
         self._profile_evs = pd.DataFrame(
             np.array(profile_evs).T,
             columns=pd.Index(evs, name="eigenvector"),
