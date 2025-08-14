@@ -152,6 +152,16 @@ class Chi2(jaml.YAMLWrapper):
                     | labels.kinvars_yaml_to_py
                 )
             )
+
+            int_cols = [
+                "id_point",
+                "id_dataset",
+                "id_bin",
+            ]  # no A and Z here since they are sometimes non-integer
+            self._snapshots_breakdown_points[int_cols] = (
+                self._snapshots_breakdown_points[int_cols].astype("Int64", copy=False)
+            )
+
             self._snapshots_breakdown_points.set_index(
                 ["id_snapshot", "id_point"], inplace=True
             )
