@@ -569,13 +569,21 @@ class Datasets(jaml.YAMLWrapper):
                     "correlated_systematic_uncertainties": jaml.nested_get(
                         data, ["GridSpec", "NumberOfCorrSysErr"]
                     ),
-                    "kinematic_variables": jaml.nested_get(
-                        data, ["GridSpec", "TypeKinVar"]
-                    ),
-                    "type_theory": jaml.nested_get(data, ["GridSpec", "TypeTheory"]),
-                    "types_uncertainties": jaml.nested_get(
-                        data, ["GridSpec", "TypeUncertainties"]
-                    ),
+                    "kinematic_variables": [
+                        labels.kinvars_yaml_to_py[k]
+                        for k in cast(
+                            list[str], jaml.nested_get(data, ["GridSpec", "TypeKinVar"])
+                        )
+                    ],
+                    "type_theory": labels.theory_yaml_to_py[
+                        cast(str, jaml.nested_get(data, ["GridSpec", "TypeTheory"]))
+                    ],
+                    "types_uncertainties": [labels.uncertainties_yaml_to_py[k] for k in 
+                        cast(
+                            list[str],
+                            jaml.nested_get(data, ["GridSpec", "TypeUncertainties"]),
+                        )
+                    ],
                     "num_points": jaml.nested_get(data, ["GridSpec", "Dim", 0]),
                     # "grid": np.array(jaml.nested_get(data, ["GridSpec", "Grid"])),
                 }
