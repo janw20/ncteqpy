@@ -260,6 +260,7 @@ class Datasets(jaml.YAMLWrapper):
                 },
                 "GridSpec": {
                     "NumberOfCorrSysErr": None,
+                    "TypeTheory": None,
                     "TypeColumns": None,
                     "Grid": None,
                 },
@@ -324,10 +325,16 @@ class Datasets(jaml.YAMLWrapper):
                 e.add_note(f"Unknown field {e.args[0]} in the data file {p}")
                 raise e
 
+            observable = cast(str, jaml.nested_get(data, ["GridSpec", "TypeTheory"]))
+
             points_list.extend(
                 {
                     **info,
                     **dict(zip(grid_row_labels, grid_row)),
+                    # add data column that holds the actual observable
+                    "data": grid_row[
+                        grid_row_labels.index(labels.data_yaml_to_py[observable])
+                    ],
                 }
                 for grid_row in cast(
                     list[list[float]], jaml.nested_get(data, ["GridSpec", "Grid"])
@@ -335,7 +342,14 @@ class Datasets(jaml.YAMLWrapper):
             )
 
         self._points = pd.DataFrame.from_records(
-            data=points_list, columns=[*info.keys(), *labels.data_yaml_to_py.values()]
+            data=points_list,
+            columns=[
+                *info.keys(),
+                *labels.kinvars_yaml_to_py.values(),
+                *labels.theory_yaml_to_py.values(),
+                "data",
+                *labels.uncertainties_yaml_to_py.values(),
+            ],
         )
 
         int_cols = [
