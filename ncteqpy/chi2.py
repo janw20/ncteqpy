@@ -434,32 +434,58 @@ class Chi2(jaml.YAMLWrapper):
     @property
     def points(self) -> pd.DataFrame:
         if self._points is None or self._yaml_changed():
-            self._points = cast(
+            points_snapshots = cast(
                 pd.DataFrame, self.snapshots_breakdown_points.loc[1].copy()
+            ).sort_values(
+                "id_dataset"
             )  # FIXME figure out which snapshots to read
 
-            match_cols = (
-                ["id_dataset"]
-                + self.points.columns[
-                    self.points.columns.isin(labels.kinvars_yaml_to_py.values())
-                ].to_list()
-                + ["data"]
-            )
-            cols = (
-                match_cols
-                + list(labels.uncertainties_yaml_to_py.values())
-                + ["unc_tot"]
-            )
-            self._points = pd.merge(
-                self.points,
-                self.datasets.points_after_cuts[cols],
-                on=match_cols,
-                how="left",
-            )
+            datasets_index = self.datasets.index.set_index("id_dataset")
+            datasets_points = self.datasets.points.set_index("id_dataset")
+
+            points_list = []
+
+            for id_dataset, points1_i in points_snapshots.groupby(
+                "id_dataset", sort=True
+            ):
+
+                kinematic_variables = cast(
+                    list[str], datasets_index.loc[id_dataset]["kinematic_variables"]
+                )
+
+                # drop nan columns when matching since we cannot match on them anyway
+                points1_i_notna = points1_i.dropna(axis=1)
+
+                points2_i = datasets_points.loc[[id_dataset]].reset_index("id_dataset")
+
+                assert isinstance(kinematic_variables, list)
+
+                match_cols = (
+                    ["id_dataset"]
+                    + points1_i_notna.columns[
+                        points1_i_notna.columns.isin(kinematic_variables)
+                    ].to_list()
+                    + ["data"]
+                )
+
+                cols = (
+                    match_cols
+                    + list(labels.uncertainties_yaml_to_py.values())
+                    + ["unc_tot"]
+                )
+
+                points_list.append(
+                    pd.merge(points1_i, points2_i[cols], how="left", on=match_cols)
+                )
+            self._points = pd.concat(points_list)
             self._points.index = self.snapshots_breakdown_points.loc[1].index.copy()
 
             # compute PDF uncertainties for each point
-            for col_in in "theory", "theory_with_normalization":
+            for col_in in (
+                "theory",
+                "theory_with_normalization_only",
+                "theory_with_normalization",
+            ):
                 for col_out, func in (
                     ("pdf_unc_sym", util.pdf_uncertainty_sym),
                     ("pdf_unc_asym_lower", util.pdf_uncertainty_asym_lower),
