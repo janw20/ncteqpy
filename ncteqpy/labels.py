@@ -25,6 +25,7 @@ kinvars_yaml_to_py = {
     "Q2": "Q2",
     "W2": "W2",
     "EHAD": "E_had",
+    "EPS": "eps",
     "PT": "pT",
     "PTMIN": "pT_min",
     "PTMAX": "pT_max",
@@ -44,6 +45,7 @@ kinvars_py_to_tex = {
     "Q2": r"Q^2",
     "x": r"x",
     "y": r"y",
+    "E_had": r"E_{\text{hadron}}",
     "pT": r"p_{\text{T}}",
     "pT_min": r"p_{\text{T}}",
     "pT_max": r"p_{\text{T}}",
@@ -81,7 +83,6 @@ uncertainties_yaml_to_py = {
     "CORP": "unc_sys_corr_percent",
     "SYST": "unc_sys_corr_tot",
     "THEO": "unc_theo",
-    "EPS": "unc_eps",  # ? e.g. in ccfrXmuNu3_791.yaml
 }
 
 data_yaml_to_py = {
