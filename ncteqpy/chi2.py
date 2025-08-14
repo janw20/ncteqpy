@@ -170,11 +170,29 @@ class Chi2(jaml.YAMLWrapper):
             mask = self._snapshots_breakdown_points["id_dataset"].isin(
                 self.normalizations.index
             )
-            self._snapshots_breakdown_points.loc[mask, "theory_with_normalization"] = (
+            # `theory_with_normalization_only` is NaN for data sets that are not normalization-corrected
+            self._snapshots_breakdown_points.loc[
+                mask, "theory_with_normalization_only"
+            ] = (
                 self._snapshots_breakdown_points.loc[mask, "theory"]
                 * self.normalizations.loc[
                     self._snapshots_breakdown_points.loc[mask, "id_dataset"]
                 ]["factor"].to_numpy()
+            )
+
+            # `theory_with_normalization` is filled with `theory` where `theory_with_normalization_only` is NaN
+            self._snapshots_breakdown_points["theory_with_normalization"] = (
+                self._snapshots_breakdown_points[
+                    "theory_with_normalization_only"
+                ].copy()
+            )
+            self._snapshots_breakdown_points.fillna(
+                {
+                    "theory_with_normalization": self._snapshots_breakdown_points[
+                        "theory"
+                    ]
+                },
+                inplace=True,
             )
 
             self._pickle(self._snapshots_breakdown_points, pickle_name)
