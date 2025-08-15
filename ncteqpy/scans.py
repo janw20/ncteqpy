@@ -608,6 +608,7 @@ class ParameterScan2D(ParameterScan):
                             "parameterName2": None,
                             "paramValueInMinimum1": None,
                             "paramValueInMinimum2": None,
+                            "ParamValues":None,
                         }
                     }
                 }
@@ -638,9 +639,11 @@ class ParameterScan2D(ParameterScan):
                 param_names_i = cast(
                     tuple[str, str], (scan["parameterName1"], scan["parameterName2"])
                 )
+
                 param_min_i = cast(
                     tuple[float, float],
-                    (scan["paramValueInMinimum1"], scan["paramValueInMinimum2"]),
+                    (scan["ParamValues"][int((len(scan["ParamValues"])-1)/2)][int((len(scan["ParamValues"])-1)/2)][0],
+                    scan["ParamValues"][int((len(scan["ParamValues"])-1)/2)][int((len(scan["ParamValues"])-1)/2)][1]),
                 )
                 ranges_upper_i = cast(
                     tuple[float, float], (scan["upperRange1"], scan["upperRange2"])
