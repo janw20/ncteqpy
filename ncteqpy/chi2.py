@@ -6,9 +6,8 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 from matplotlib.axes import Axes
-from matplotlib.figure import Figure
 from matplotlib.patches import Patch
-from typing_extensions import Any, Literal, Sequence, cast
+from typing_extensions import Any, Iterator, Literal, Sequence, cast, overload
 
 import ncteqpy.data as data
 import ncteqpy.jaml as jaml
@@ -52,7 +51,7 @@ class Chi2(jaml.YAMLWrapper):
     def __init__(
         self,
         paths: str | os.PathLike[str],
-        datasets: data.Datasets,
+        datasets: data.Datasets,  # TODO: make optional
         cache_path: str | os.PathLike[str] = ".jaml_cache",
         retain_yaml: bool = False,
     ) -> None:
@@ -480,6 +479,8 @@ class Chi2(jaml.YAMLWrapper):
             self._points = pd.concat(points_list)
             self._points.index = self.snapshots_breakdown_points.loc[1].index.copy()
 
+            # assert self._points["unc_tot"].notna().sum() == datasets_points["unc_tot"]
+
             # compute PDF uncertainties for each point
             for col_in in (
                 "theory",
@@ -664,28 +665,417 @@ class Chi2(jaml.YAMLWrapper):
             kwargs_gaussian_fit=kwargs_gaussian_fit,
         )
 
-    # TODO: more sophisticated filtering
-    # TODO: cuts
-    # TODO: PDF uncertainties
+    @overload
     def plot_data_vs_theory(
         self,
-        data: data.Datasets,
+        id_dataset: int | Sequence[int] | None = ...,
+        type_experiment: str | None = ...,
+        x_variable: str | list[str] | Literal["fallback"] | None = ...,
+        xlabel: str | dict[str, str] | Literal["fallback"] | None = ...,
+        ylabel: str | Literal["fallback"] | None = ...,
+        xscale: str | None = ...,
+        yscale: str | None = ...,
+        title: str | None = ...,
+        legend: bool = ...,
+        curve_label: (
+            Literal[
+                "annotate above",
+                "annotate right",
+                "ticks",
+                "legend",
+            ]
+            | None
+        ) = ...,
+        subplot_groupby: str | None = ...,
+        subplot_label: Literal["legend"] | None = ...,
+        subplot_label_format: str | None = ...,
+        chi2_annotation: bool = ...,
+        chi2_legend: bool = ...,
+        curve_groupby: str | list[str] | Literal["fallback"] | None = ...,
+        apply_normalization: bool = ...,
+        theory_min_width: float = ...,
+        plot_pdf_uncertainty: bool = ...,
+        pdf_uncertainty_convention: Literal["sym", "asym"] = ...,
+        y_offset_add: float | None = ...,
+        y_offset_mul: float | None = ...,
+        kwargs_subplots: dict[str, Any] = ...,
+        kwargs_data: dict[str, Any] | list[dict[str, Any] | None] = ...,
+        kwargs_theory: dict[str, Any] | list[dict[str, Any] | None] = ...,
+        kwargs_theory_unc: dict[str, Any] | list[dict[str, Any] | None] = ...,
+        kwargs_xlabel: dict[str, Any] = ...,
+        kwargs_ylabel: dict[str, Any] = ...,
+        kwargs_title: dict[str, Any] = ...,
+        kwargs_legend: dict[str, Any] = ...,
+        kwargs_legend_chi2: dict[str, Any] = ...,
+        kwargs_legend_curves: dict[str, Any] = ...,
+        kwargs_ticks_curves: dict[str, Any] | list[dict[str, Any] | None] = ...,
+        kwargs_annotate_chi2: dict[str, Any] = ...,
+        kwargs_annotate_curves: dict[str, Any] | list[dict[str, Any] | None] = ...,
+        *,
+        iterate: Literal[False] = ...,
+        **kwargs: Any,
+    ) -> AxesGrid | list[AxesGrid]:
+        """Plot data vs. theory (one data set per figure).
+
+        Parameters
+        ----------
+        id_dataset : int | Sequence[int] | None, optional
+            Data sets for which to plot the data vs. theory, by default None. Must be of the same type_experiment. If None, `type_experiment` must be given.
+        type_experiment : str | None, optional
+            Process for which to plot the data vs. theory, by default None. If None, `id_dataset` must be given.
+        x_variable : str | list[str] | None, optional
+            The kinematic variable to put on the x axis, by default "fallback". Plots a binned distribution if a list is passed.
+        xlabel : str | dict[str, str] | Literal["fallback"] | None, optional
+            x label of the plot, by default None.
+        ylabel : str | Literal["fallback"] | None, optional
+            y label of the plot, by default None.
+        xscale : str | None, optional
+            x scale of the plot, by default no changing of x scale.
+        yscale : str | None, optional
+            y scale of the plot, by default no changing of y scale.
+        title : str | None, optional
+            Title of the plot, by default None.
+        legend : bool, optional
+            If a legend annotating data & theory is shown, by default True.
+        curve_label : Literal["annotate above", "annotate right", "ticks", "legend"] | None, optional
+            Where the curve labels are shown, by default "ticks". If None, no labels are shown.
+        subplot_groupby: str | None, optional
+            Variable to group the subplot axes by, by default None (no grouping).
+        subplot_label : Literal["legend"] | None, optional  # FIXME
+            Where to label the subplot, by default None.
+        subplot_label_format : str | None, optional
+            Format of the subplot label, by default None.
+        chi2_annotation : bool, optional
+            If the χ²/point value is annotated, by default True.
+        chi2_legend : bool, optional
+            If a legend with the total χ² is shown, by default True.
+        curve_groupby : str | list[str] | Literal["fallback"] | None, optional
+            Variable(s) to group the curves by, by default "fallback".
+        apply_normalization : bool, optional
+            If the normalization-corrected theory is plotted, by default True.
+        theory_min_width : float, optional
+            Width of the theory curve (in units of axes fraction) if there is only one point, by default 0.06.
+        plot_pdf_uncertainty : bool, optional
+            If the PDF uncertainty is plotted around the theory curve, by default True.
+        pdf_uncertainty_convention : Literal["sym", "asym"], optional
+            If the PDF uncertainties should be symmetric ("sym") or asymmetric ("asym"), by default "asym".
+        y_offset_add : float | None, optional
+            Additive offset by which the curves are separated, by default 0 (no offset).
+        y_offset_mul : float | None, optional
+            Multiplicative offset by which the curves are separated, by default 0 (no offset). The factor between each curve is `10**y_offset_mul`.
+        kwargs_subplots : dict[str, Any], optional
+            Keyword arguments to pass to `plt.subplots` through `AxesGrid`.
+        kwargs_data : dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments to pass to `plt.Axes.plot` for plotting the data.
+        kwargs_theory : dict[str, Any] | list[dict[str, Any]  |  None], optional
+            Keyword arguments to pass to `plt.Axes.plot` for plotting the theory.
+        kwargs_theory_unc : dict[str, Any] | list[dict[str, Any]  |  None], optional
+            Keyword arguments to pass to `plt.Axes.fill_between` for plotting the PDF uncertainty.
+        kwargs_xlabel : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.set_xlabel`.
+        kwargs_ylabel : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.set_ylabel`.
+        kwargs_title : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.set_title`.
+        kwargs_legend : dict[str, Any], optional
+            Keyword arguments to pass to `AdditionalLegend` for annotating data & theory.
+        kwargs_legend_chi2 : dict[str, Any], optional
+            Keyword arguments to pass to `AdditionalLegend` for annotating the total χ².
+        kwargs_legend_curves : dict[str, Any], optional
+            Keyword arguments to pass to `AdditionalLegend` for annotating the curve labels.
+        kwargs_ticks_curves : dict[str, Any] | list[dict[str, Any]  |  None], optional
+            Keyword arguments to pass to `plt.Axes.set_yticks` for annotating the curve labels.
+        kwargs_annotate_chi2 : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.annotate` for annotating the χ²/point values.
+        kwargs_annotate_curves : dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments to pass to `plt.Axes.annotate` for annotating the curve labels.
+        iterate : bool, optional
+            If the plots should be returned as an iterator, by default False.
+
+        Returns
+        -------
+        AxesGrid | list[AxesGrid]
+            AxesGrid(s) with the data vs. theory plot(s).
+        """
+
+    @overload
+    def plot_data_vs_theory(
+        self,
+        id_dataset: int | Sequence[int] | None = ...,
+        type_experiment: str | None = ...,
+        x_variable: str | list[str] | Literal["fallback"] | None = ...,
+        xlabel: str | dict[str, str] | Literal["fallback"] | None = ...,
+        ylabel: str | Literal["fallback"] | None = ...,
+        xscale: str | None = ...,
+        yscale: str | None = ...,
+        title: str | None = ...,
+        legend: bool = ...,
+        curve_label: (
+            Literal[
+                "annotate above",
+                "annotate right",
+                "ticks",
+                "legend",
+            ]
+            | None
+        ) = ...,
+        subplot_groupby: str | None = ...,
+        subplot_label: Literal["legend"] | None = ...,
+        subplot_label_format: str | None = ...,
+        chi2_annotation: bool = ...,
+        chi2_legend: bool = ...,
+        curve_groupby: str | list[str] | Literal["fallback"] | None = ...,
+        apply_normalization: bool = ...,
+        theory_min_width: float = ...,
+        plot_pdf_uncertainty: bool = ...,
+        pdf_uncertainty_convention: Literal["sym", "asym"] = ...,
+        y_offset_add: float | None = ...,
+        y_offset_mul: float | None = ...,
+        kwargs_subplots: dict[str, Any] = ...,
+        kwargs_data: dict[str, Any] | list[dict[str, Any] | None] = ...,
+        kwargs_theory: dict[str, Any] | list[dict[str, Any] | None] = ...,
+        kwargs_theory_unc: dict[str, Any] | list[dict[str, Any] | None] = ...,
+        kwargs_xlabel: dict[str, Any] = ...,
+        kwargs_ylabel: dict[str, Any] = ...,
+        kwargs_title: dict[str, Any] = ...,
+        kwargs_legend: dict[str, Any] = ...,
+        kwargs_legend_chi2: dict[str, Any] = ...,
+        kwargs_legend_curves: dict[str, Any] = ...,
+        kwargs_ticks_curves: dict[str, Any] | list[dict[str, Any] | None] = ...,
+        kwargs_annotate_chi2: dict[str, Any] = ...,
+        kwargs_annotate_curves: dict[str, Any] | list[dict[str, Any] | None] = ...,
+        *,
+        iterate: Literal[True],
+        **kwargs: Any,
+    ) -> Iterator[AxesGrid]:
+        """Plot data vs. theory (one data set per figure).
+
+        Parameters
+        ----------
+        id_dataset : int | Sequence[int] | None, optional
+            Data sets for which to plot the data vs. theory, by default None. Must be of the same type_experiment. If None, `type_experiment` must be given.
+        type_experiment : str | None, optional
+            Process for which to plot the data vs. theory, by default None. If None, `id_dataset` must be given.
+        x_variable : str | list[str] | None, optional
+            The kinematic variable to put on the x axis, by default "fallback". Plots a binned distribution if a list is passed.
+        xlabel : str | dict[str, str] | Literal["fallback"] | None, optional
+            x label of the plot, by default None.
+        ylabel : str | Literal["fallback"] | None, optional
+            y label of the plot, by default None.
+        xscale : str | None, optional
+            x scale of the plot, by default no changing of x scale.
+        yscale : str | None, optional
+            y scale of the plot, by default no changing of y scale.
+        title : str | None, optional
+            Title of the plot, by default None.
+        legend : bool, optional
+            If a legend annotating data & theory is shown, by default True.
+        curve_label : Literal["annotate above", "annotate right", "ticks", "legend"] | None, optional
+            Where the curve labels are shown, by default "ticks". If None, no labels are shown.
+        subplot_groupby: str | None, optional
+            Variable to group the subplot axes by, by default None (no grouping).
+        subplot_label : Literal["legend"] | None, optional  # FIXME
+            Where to label the subplot, by default None.
+        subplot_label_format : str | None, optional
+            Format of the subplot label, by default None.
+        chi2_annotation : bool, optional
+            If the χ²/point value is annotated, by default True.
+        chi2_legend : bool, optional
+            If a legend with the total χ² is shown, by default True.
+        curve_groupby : str | list[str] | Literal["fallback"] | None, optional
+            Variable(s) to group the curves by, by default "fallback".
+        apply_normalization : bool, optional
+            If the normalization-corrected theory is plotted, by default True.
+        theory_min_width : float, optional
+            Width of the theory curve (in units of axes fraction) if there is only one point, by default 0.06.
+        plot_pdf_uncertainty : bool, optional
+            If the PDF uncertainty is plotted around the theory curve, by default True.
+        pdf_uncertainty_convention : Literal["sym", "asym"], optional
+            If the PDF uncertainties should be symmetric ("sym") or asymmetric ("asym"), by default "asym".
+        y_offset_add : float | None, optional
+            Additive offset by which the curves are separated, by default 0 (no offset).
+        y_offset_mul : float | None, optional
+            Multiplicative offset by which the curves are separated, by default 0 (no offset). The factor between each curve is `10**y_offset_mul`.
+        kwargs_subplots : dict[str, Any], optional
+            Keyword arguments to pass to `plt.subplots` through `AxesGrid`.
+        kwargs_data : dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments to pass to `plt.Axes.plot` for plotting the data.
+        kwargs_theory : dict[str, Any] | list[dict[str, Any]  |  None], optional
+            Keyword arguments to pass to `plt.Axes.plot` for plotting the theory.
+        kwargs_theory_unc : dict[str, Any] | list[dict[str, Any]  |  None], optional
+            Keyword arguments to pass to `plt.Axes.fill_between` for plotting the PDF uncertainty.
+        kwargs_xlabel : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.set_xlabel`.
+        kwargs_ylabel : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.set_ylabel`.
+        kwargs_title : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.set_title`.
+        kwargs_legend : dict[str, Any], optional
+            Keyword arguments to pass to `AdditionalLegend` for annotating data & theory.
+        kwargs_legend_chi2 : dict[str, Any], optional
+            Keyword arguments to pass to `AdditionalLegend` for annotating the total χ².
+        kwargs_legend_curves : dict[str, Any], optional
+            Keyword arguments to pass to `AdditionalLegend` for annotating the curve labels.
+        kwargs_ticks_curves : dict[str, Any] | list[dict[str, Any]  |  None], optional
+            Keyword arguments to pass to `plt.Axes.set_yticks` for annotating the curve labels.
+        kwargs_annotate_chi2 : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.annotate` for annotating the χ²/point values.
+        kwargs_annotate_curves : dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments to pass to `plt.Axes.annotate` for annotating the curve labels.
+        iterate : bool, optional
+            If the plots should be returned as an iterator, by default False.
+
+        Returns
+        -------
+        Iterator[AxesGrid]
+            AxesGrid(s) with the data vs. theory plot(s).
+        """
+
+    def plot_data_vs_theory(
+        self,
         id_dataset: int | Sequence[int] | None = None,
         type_experiment: str | None = None,
-        id_snapshot: int = 0,
-        ax: Axes | Sequence[Axes] | None = None,
+        x_variable: str | list[str] | Literal["fallback"] | None = "fallback",
+        xlabel: str | dict[str, str] | Literal["fallback"] | None = "fallback",
+        ylabel: str | Literal["fallback"] | None = "fallback",
+        xscale: str | None = None,
+        yscale: str | None = None,
+        title: str | None = None,
+        legend: bool = True,
+        curve_label: (
+            Literal[
+                "annotate above",
+                "annotate right",
+                "ticks",
+                "legend",
+            ]
+            | None
+        ) = "ticks",
         subplot_groupby: str | None = None,
-        subplot_label: Literal["legend"] | None = "legend",
-        curve_groupby: str | None = None,
-        pdf_path: str | os.PathLike | None = None,
+        subplot_label: Literal["legend"] | None = None,
+        subplot_label_format: str | None = None,
+        chi2_annotation: bool = True,
+        chi2_legend: bool = True,
+        curve_groupby: str | list[str] | Literal["fallback"] | None = "fallback",
+        apply_normalization: bool = True,
+        theory_min_width: float = 0.06,
+        plot_pdf_uncertainty: bool = True,
+        pdf_uncertainty_convention: Literal["sym", "asym"] = "asym",
+        y_offset_add: float | None = None,
+        y_offset_mul: float | None = None,
         kwargs_subplots: dict[str, Any] = {},
+        kwargs_data: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_theory: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_theory_unc: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_xlabel: dict[str, Any] = {},
+        kwargs_ylabel: dict[str, Any] = {},
+        kwargs_title: dict[str, Any] = {},
+        kwargs_legend: dict[str, Any] = {},
+        kwargs_legend_chi2: dict[str, Any] = {},
+        kwargs_legend_curves: dict[str, Any] = {},
+        kwargs_ticks_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_annotate_chi2: dict[str, Any] = {},
+        kwargs_annotate_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
+        *,
+        iterate: bool = False,
         **kwargs: Any,
-    ) -> tuple[Figure, Axes] | list[tuple[Figure, Axes | npt.NDArray[Axes | None]]]:
-        if pdf_path is not None:
-            raise NotImplementedError("Saving as pdf not implemented yet")
+    ) -> AxesGrid | list[AxesGrid] | Iterator[AxesGrid]:
+        res_iter = self._plot_data_vs_theory(
+            id_dataset=id_dataset,
+            type_experiment=type_experiment,
+            x_variable=x_variable,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            xscale=xscale,
+            yscale=yscale,
+            title=title,
+            legend=legend,
+            curve_label=curve_label,
+            subplot_groupby=subplot_groupby,
+            subplot_label=subplot_label,
+            subplot_label_format=subplot_label_format,
+            chi2_annotation=chi2_annotation,
+            chi2_legend=chi2_legend,
+            curve_groupby=curve_groupby,
+            apply_normalization=apply_normalization,
+            theory_min_width=theory_min_width,
+            plot_pdf_uncertainty=plot_pdf_uncertainty,
+            pdf_uncertainty_convention=pdf_uncertainty_convention,
+            y_offset_add=y_offset_add,
+            y_offset_mul=y_offset_mul,
+            kwargs_subplots=kwargs_subplots,
+            kwargs_data=kwargs_data,
+            kwargs_theory=kwargs_theory,
+            kwargs_theory_unc=kwargs_theory_unc,
+            kwargs_xlabel=kwargs_xlabel,
+            kwargs_ylabel=kwargs_ylabel,
+            kwargs_title=kwargs_title,
+            kwargs_legend=kwargs_legend,
+            kwargs_legend_chi2=kwargs_legend_chi2,
+            kwargs_legend_curves=kwargs_legend_curves,
+            kwargs_ticks_curves=kwargs_ticks_curves,
+            kwargs_annotate_chi2=kwargs_annotate_chi2,
+            kwargs_annotate_curves=kwargs_annotate_curves,
+            **kwargs,
+        )
 
-        if ax is not None:
-            raise NotImplementedError("Passing your own Axes not implemented yet")
+        if iterate:
+            return res_iter
+        else:
+            res = list(res_iter)
+
+            return res[0] if len(res) == 1 else res
+
+    # TODO: more sophisticated filtering
+    # TODO: cuts
+    # multiple figures with one dataset per figure
+    def _plot_data_vs_theory(
+        self,
+        id_dataset: int | Sequence[int] | None = None,
+        type_experiment: str | None = None,
+        x_variable: str | list[str] | Literal["fallback"] | None = "fallback",
+        xlabel: str | dict[str, str] | Literal["fallback"] | None = "fallback",
+        ylabel: str | Literal["fallback"] | None = "fallback",
+        xscale: str | None = None,
+        yscale: str | None = None,
+        title: str | None = None,
+        legend: bool = True,
+        curve_label: (
+            Literal[
+                "annotate above",
+                "annotate right",
+                "ticks",
+                "legend",
+            ]
+            | None
+        ) = "ticks",
+        subplot_groupby: str | None = None,
+        subplot_label: Literal["legend"] | None = None,
+        subplot_label_format: str | None = None,
+        chi2_annotation: bool = True,
+        chi2_legend: bool = True,
+        curve_groupby: str | list[str] | Literal["fallback"] | None = "fallback",
+        apply_normalization: bool = True,
+        theory_min_width: float = 0.06,
+        plot_pdf_uncertainty: bool = True,
+        pdf_uncertainty_convention: Literal["sym", "asym"] = "asym",
+        y_offset_add: float | None = None,
+        y_offset_mul: float | None = None,
+        kwargs_subplots: dict[str, Any] = {},
+        kwargs_data: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_theory: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_theory_unc: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_xlabel: dict[str, Any] = {},
+        kwargs_ylabel: dict[str, Any] = {},
+        kwargs_title: dict[str, Any] = {},
+        kwargs_legend: dict[str, Any] = {},
+        kwargs_legend_chi2: dict[str, Any] = {},
+        kwargs_legend_curves: dict[str, Any] = {},
+        kwargs_ticks_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_annotate_chi2: dict[str, Any] = {},
+        kwargs_annotate_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
+        **kwargs: Any,
+    ) -> Iterator[AxesGrid]:
 
         # bring id_dataset in Sequence[int] form (either directly from id_dataset or indirectly from collecting all IDs belonging to type_experiment)
         # the points variable holds all snapshot points belonging to the relevant dataset IDs
@@ -696,18 +1086,14 @@ class Chi2(jaml.YAMLWrapper):
                     "Please provide either `id_dataset` or `type_experiment`"
                 )
             else:
-                points = self.snapshots_breakdown_points.loc[id_snapshot].query(
-                    "type_experiment == @type_experiment"
-                )
+                points = self.points.query("type_experiment == @type_experiment")
                 id_dataset = cast(
                     Sequence[int], points["id_dataset"].unique()
                 )  # actually npt.NDArray[np.int_]
         else:
             if isinstance(id_dataset, int):
                 id_dataset = [id_dataset]
-            points = self.snapshots_breakdown_points.loc[id_snapshot].query(
-                "id_dataset in @id_dataset"
-            )
+            points = self.points.query("id_dataset in @id_dataset")
             types_experiment = points["type_experiment"].unique()
             if len(types_experiment) == 1:
                 if type_experiment is None:
@@ -721,75 +1107,45 @@ class Chi2(jaml.YAMLWrapper):
                     "Please provide datasets that are each of the same type_experiment"
                 )
 
-        # if ax is None and pdf_path is None:
-        #     ax = [plt.gca()]
-        # elif ax is None and pdf_path is not None:
-        #     pdf = matplotlib.backends.backend_pdf.PdfPages(pdf_path)
-
-        # if save_path is not None:
-        #     save_path = pathlib.Path(save_path)
-        #     pdf = mpl.backends.backend_pdf.PdfPages(save_path)
-
-        # gb = self.snapshots_breakdown_points.loc[id_snapshot].sort_values(["type_experiment", "id_dataset"]).groupby(["type_experiment", "id_dataset"])
-
         # group the relevant dataset IDs so we get one dataset per figure
         fig_gb = points.query("id_dataset in @id_dataset").groupby(
             "id_dataset", sort=True
         )
 
-        if ax is None:
-            kwargs_subplots = {"layout": "tight"} | kwargs_subplots
-
-            if subplot_groupby is None:
-                ax_grid = [AxesGrid(1, **kwargs_subplots) for _ in id_dataset]
-            else:
-                ax_grid = []
-                for _, data_i in fig_gb:
-                    # group for different axes in one figure
-                    data_i_gb = data_i.groupby(subplot_groupby)
-                    ax_grid.append(AxesGrid(n_real=len(data_i_gb), **kwargs_subplots))
-
-        else:
-            if isinstance(ax, Sequence):
-                fig_ax = [(ax_i.figure, ax_i) for ax_i in ax]
-            else:
-                fig_ax = [(ax.figure, ax)]
-
         found_dataset = False
-        for grid_i, (id_dataset_i, data_i) in zip(ax_grid, fig_gb):
+        for i, (id_dataset_i, data_i) in enumerate(fig_gb):
             try:
-                dataset = data.by_id(id_dataset_i)
+                dataset = self.datasets.by_id(
+                    id_dataset_i  # pyright: ignore[reportArgumentType]
+                )
                 found_dataset = True
             except:
                 dataset = None
 
+            subplot_gb = (
+                data_i.groupby(subplot_groupby) if subplot_groupby is not None else None
+            )
+
+            kwargs_subplots_default = {
+                "sharex": True,
+                "sharey": True,
+                "layout": "constrained",
+            }
+            kwargs_subplots_updated = util.update_kwargs(
+                kwargs_subplots_default, kwargs_subplots, i
+            )
+
+            n_real = 1 if subplot_gb is None else len(subplot_gb)
+
+            ax_grid = AxesGrid(n_real=n_real, **kwargs_subplots_updated)
+
             ax_iter = zip(
-                grid_i.ax_real.flatten(),
-                (
-                    data_i.groupby(subplot_groupby)
-                    if subplot_groupby is not None
-                    else [(np.nan, data_i)]
-                ),
+                ax_grid.ax_real.flatten(),
+                (subplot_gb if subplot_gb is not None else [(np.nan, data_i)]),
             )
             for ax_i, (ax_gb_val_i, data_ij) in ax_iter:
 
-                # plot only the same bins: match on the kinematic variables
                 if dataset is not None:
-
-                    match_indices = []
-                    for row_data in dataset.points.itertuples():
-                        for row_theory in data_ij.itertuples():
-                            row_match = True
-                            for kv in dataset.kinematic_variables:
-                                if (
-                                    abs(getattr(row_data, kv) - getattr(row_theory, kv))
-                                    > 1e-10
-                                ):
-                                    row_match = False
-                                    break
-                            if row_match:
-                                match_indices.append(getattr(row_data, "Index"))
-                    data_matched = dataset.points.iloc[match_indices]
 
                     kwargs_i: dict[str, Any] = {}
                     if (
@@ -813,17 +1169,43 @@ class Chi2(jaml.YAMLWrapper):
 
                     kwargs_i = kwargs_i | kwargs
                 else:
-                    data_matched = data_ij
                     kwargs_i = {}
 
-                assert len(data_ij) == len(data_matched)
-
                 data_vs_theory.plot(
-                    type_experiment,
-                    data=data_matched,
-                    theory=data_ij,
+                    type_experiment=type_experiment,
                     ax=ax_i,
+                    points=data_ij,
+                    x_variable=x_variable,
+                    xlabel=xlabel,
+                    ylabel=ylabel,
+                    xscale=xscale,
+                    yscale=yscale,
+                    title=title,
+                    legend=legend,
+                    curve_label=curve_label,
+                    subplot_label=subplot_label,
+                    subplot_label_format=subplot_label_format,
+                    chi2_annotation=chi2_annotation,
+                    chi2_legend=chi2_legend,
                     curve_groupby=curve_groupby,
+                    apply_normalization=apply_normalization,
+                    theory_min_width=theory_min_width,
+                    plot_pdf_uncertainty=plot_pdf_uncertainty,
+                    pdf_uncertainty_convention=pdf_uncertainty_convention,
+                    y_offset_add=y_offset_add,
+                    y_offset_mul=y_offset_mul,
+                    kwargs_data=kwargs_data,
+                    kwargs_theory=kwargs_theory,
+                    kwargs_theory_unc=kwargs_theory_unc,
+                    kwargs_xlabel=kwargs_xlabel,
+                    kwargs_ylabel=kwargs_ylabel,
+                    kwargs_title=kwargs_title,
+                    kwargs_legend=kwargs_legend,
+                    kwargs_legend_chi2=kwargs_legend_chi2,
+                    kwargs_legend_curves=kwargs_legend_curves,
+                    kwargs_ticks_curves=kwargs_ticks_curves,
+                    kwargs_annotate_chi2=kwargs_annotate_chi2,
+                    kwargs_annotate_curves=kwargs_annotate_curves,
                     **kwargs_i,
                 )
 
@@ -852,6 +1234,7 @@ class Chi2(jaml.YAMLWrapper):
                     label += "$"
 
                     subplot_legend = p_util.AdditionalLegend(
+                        -1,
                         ax_i,
                         handles=[Patch()],
                         labels=[label],
@@ -863,22 +1246,84 @@ class Chi2(jaml.YAMLWrapper):
                     )
                     ax_i.add_artist(subplot_legend)
 
-            grid_i.prune_labels()
+            ax_grid.prune_labels()
 
             if dataset is not None:
-                grid_i.fig.suptitle(
+                ax_grid.fig.suptitle(
                     f"{(dataset.plotting_short_info + ',  ') if dataset.plotting_short_info is not None else ''}{(dataset.plotting_process + ',  ') if dataset.plotting_process is not None else ''}Dataset ID: {dataset.id}",
                     fontsize="medium",
                 )
 
-            grid_i.tight_layout()
+            yield ax_grid
 
         if not found_dataset:
             raise ValueError(
                 "No datasets found for the given values of id_dataset and type_experiment"
             )
 
-        return [(g.fig, g.ax) for g in ax_grid]
+    # one figure with all datasets
+    def plot_data_vs_theory_grouped(
+        self,
+        datasets: data.Datasets,
+        id_datasets: int | list[int] | None = None,
+        type_experiment: str | None = None,
+        id_snapshot: int = 0,
+        subplot_groupby: str | list[str] | None = None,
+        subplot_label: Literal["legend"] | None = "legend",
+        subplot_label_format: Literal["fallback"] | str = "fallback",
+        curve_groups: list[list[int]] | None = None,
+        kwargs_subplots: dict[str, Any] = {},
+        **kwargs,
+    ) -> AxesGrid:
+        if id_datasets is not None and type_experiment is None:
+            if not isinstance(id_datasets, list):
+                id_datasets = [id_datasets]
 
-    def plot_data_vs_theory_grouped(self) -> None:
-        pass
+            points = self.points.query("id_dataset in @id_datasets")
+            if points["type_experiment"].nunique() > 1:
+                raise ValueError("All datasets must be of the same type_experiment")
+
+            type_experiment = cast(str, points["type_experiment"].iloc[0])
+        elif id_datasets is None and type_experiment is not None:
+            id_datasets = self.points.query("type_experiment == @type_experiment")[
+                "id_dataset"
+            ].unique()
+
+            points = self.points.query("id_dataset in @id_datasets")
+        else:
+            raise ValueError("Please provide either `id_datasets` or `type_experiment`")
+
+        if isinstance(subplot_groupby, str):
+            subplot_groupby = [subplot_groupby]
+
+        gb = points.groupby(subplot_groupby)
+
+        ax_grid = AxesGrid(len(gb), **kwargs_subplots)
+
+        for gb_i, ax_i in zip(gb, ax_grid.ax_real.flat):
+            points_i = gb_i[1]
+
+            if subplot_groupby is not None and subplot_label_format == "fallback":
+                subplot_label_format_i = (
+                    "$"
+                    + ", ".join(
+                        f"{labels.kinvars_py_to_tex.get(s_gb, s_gb)} = {{{s_gb}}}"
+                        for s_gb in subplot_groupby
+                    )
+                    + "$"
+                )
+            else:
+                subplot_label_format_i = subplot_label_format
+
+            data_vs_theory.plot(
+                type_experiment=type_experiment,
+                points=points_i,
+                ax=ax_i,
+                subplot_label=subplot_label,
+                subplot_label_format=subplot_label_format_i,
+                **kwargs,
+            )
+
+        ax_grid.prune_labels()
+
+        return ax_grid
