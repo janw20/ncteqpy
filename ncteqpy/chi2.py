@@ -513,6 +513,7 @@ class Chi2(jaml.YAMLWrapper):
     def plot_data_breakdown(
         self,
         ax: Axes,
+        id_dataset: int | Sequence[int] | None = None,
         per_point: bool = True,
         bar_orientation: Literal["horizontal", "vertical"] = "horizontal",
         chi2_line_1: bool = True,
@@ -531,6 +532,8 @@ class Chi2(jaml.YAMLWrapper):
         ----------
         ax : plt.Axes
             The axes to plot on.
+        id_dataset : int | Sequence[int] | None, optional
+            IDs of the datasets to be plotted, by default None.
         per_point : bool, optional
             If χ² per point should be plotted, by default True.
         bar_orientation : Literal["horizontal", "vertical"], optional
@@ -553,9 +556,20 @@ class Chi2(jaml.YAMLWrapper):
             Keyword arguments to pass to `plt.Axes.legend` for the legend set by `bar_props_groupby`.
         """
 
+        if isinstance(id_dataset, int):
+            id_dataset = [id_dataset]
+        elif id_dataset is not None:
+            id_dataset = list(id_dataset)
+
+        chi2 = (
+            self.last_value_per_data.loc[id_dataset]
+            if id_dataset is not None
+            else self.last_value_per_data
+        )
+
         plot_chi2_data_breakdown(
             ax=ax,
-            chi2=self.last_value_per_data,
+            chi2=chi2,
             per_point=per_point,
             num_points=self.num_points,
             chi2_line_1=chi2_line_1,
