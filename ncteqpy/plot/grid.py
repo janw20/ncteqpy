@@ -40,7 +40,12 @@ class AxesGrid:
     _indices_none: npt.NDArray[tuple[int, int]] | None = None
 
     def __init__(
-        self, n_real: int, sharex: bool = False, sharey: bool = False, **kwargs: Any
+        self,
+        n_real: int,
+        sharex: bool = False,
+        sharey: bool = False,
+        ax_size: tuple[float, float] = plt.rcParams["figure.figsize"],
+        **kwargs: Any,
     ) -> None:
         """Creates `n` subplots in a grid. If `n > nrows * ncols`, the grid entries on the bottom right don't contain `Axes`.
 
@@ -48,6 +53,8 @@ class AxesGrid:
         ----------
         n_real : int
             Actual number of subplot Axes to create
+        ax_size : tuple[float, float], optional
+            Size of one subplot, by default `plt.rcParams["figure.figsize"]`.
         kwargs : Any
             Keyword arguments passed to `plt.subplots`
 
@@ -81,13 +88,19 @@ class AxesGrid:
             kwargs_naxes["nrows"] = ceil(n_real / kwargs_naxes["ncols"])
         # if none of them are given, we try to make the figure as square as possible. ncols is always rounded down since usually the width of a subplot should be larger than the height
         else:
-            kwargs_naxes["ncols"] = int(np.sqrt(n_real))
+            kwargs_naxes["ncols"] = round(np.sqrt(n_real))
             kwargs_naxes["nrows"] = ceil(n_real / kwargs_naxes["ncols"])
 
         # how many axes we have to remove in the end
         n_none = kwargs_naxes["nrows"] * kwargs_naxes["ncols"] - n_real
 
-        kwargs_default = {"layout": "compressed"}
+        kwargs_default = {
+            "layout": "compressed",
+            "figsize": (
+                ax_size[0] * kwargs_naxes["ncols"],
+                ax_size[1] * kwargs_naxes["nrows"],
+            ),
+        }
 
         fig, ax = cast(tuple[Figure, Axes | npt.NDArray[Axes | None]], plt.subplots(sharex=sharex, sharey=sharey, **(kwargs_default | kwargs | kwargs_naxes)))  # type: ignore[type-var]
 
@@ -95,7 +108,7 @@ class AxesGrid:
 
         self._fig = fig
         self._ax = np.atleast_2d(np.array(ax, copy=True))
-        self._ax_real = self._ax.flat[:-n_none] if n_none > 0 else self._ax[0]
+        self._ax_real = self._ax.flat[:-n_none] if n_none > 0 else self._ax.flatten()
 
         if isinstance(ax, np.ndarray):
             # remove the superfluous axes in the last row
