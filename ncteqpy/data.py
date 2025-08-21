@@ -232,6 +232,7 @@ class Datasets(jaml.YAMLWrapper):
     def groupby(
         self,
         by: str | list[str],
+        grouper: pd.Series[Any] | None = None,
         order: list[Hashable] | None = None,
         labels: dict[Hashable, str] | None = None,
         label_format: str | None = None,
@@ -240,6 +241,7 @@ class Datasets(jaml.YAMLWrapper):
         return DatasetsGroupBy(
             datasets_index=self.index,
             by=by,
+            grouper=grouper,
             order=order,
             labels=labels,
             label_format=label_format,

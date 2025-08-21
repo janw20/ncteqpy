@@ -33,6 +33,7 @@ class DatasetsGroupBy:
         self,
         datasets_index: pd.DataFrame,
         by: str | list[str],
+        grouper: pd.Series[Any] | None = None,
         order: list[Hashable] | None = None,
         labels: dict[Hashable, str] | None = None,
         label_format: str | None = None,
@@ -46,6 +47,8 @@ class DatasetsGroupBy:
             Index of the datasets in the format given by `ncteqpy.Datasets.index`.
         by : str | list[str]
             Key(s) to group the data sets by, must be column labels of `datasets_index`, e.g., `"type_experiment"` or `["A_heavier", "Z_heavier"]`.
+        grouper : pd.Series | None, optional
+            `Series` mapping some or all dataset IDs to group values. This takes precedence over the values in `datasets_index`.
         order : list[Hashable] | None, optional
             Custom ordering of the group values, by default None. If `by` is a list, this must be a list of tuples.
         labels : dict[Hashable, str] | None, optional
@@ -66,7 +69,7 @@ class DatasetsGroupBy:
         order_key = (
             cast(
                 Callable[[pd.Series], pd.Series],
-                pd.Series(np.arange(len(order)), index=order).get,
+                lambda key: pd.Series(np.arange(len(order)), index=order).get(key, default=np.inf * np.ones_like(key)),
             )
             if order is not None
             else None
@@ -76,11 +79,16 @@ class DatasetsGroupBy:
 
         # map id_dataset to group keys
         if isinstance(by, str):
-            self._grouper = datasets_index_reindexed[by].sort_values(key=order_key)
+            self._grouper = datasets_index_reindexed[by].copy()
         else:
             self._grouper = (
                 datasets_index_reindexed[by].apply(tuple, axis=1)
-            ).sort_values(key=order_key)
+            ).copy()
+
+        if grouper is not None:
+            self._grouper.update(grouper)
+        
+        self._grouper.sort_values(key=order_key, inplace=True)
 
         self._sorter = (
             pd.Series(
@@ -101,7 +109,7 @@ class DatasetsGroupBy:
         )
 
         self._groupby = datasets_index_reindexed.sort_index(
-            level=self._keys, key=self._sort_key  # pyright: ignore[reportArgumentType]
+            key=self._sort_key  # pyright: ignore[reportArgumentType]
         ).groupby(self._grouper, sort=False, dropna=False)
 
         labels_formatted: dict[Hashable, str] = {}
@@ -187,7 +195,7 @@ class DatasetsGroupBy:
 
     @property
     def grouper(self) -> pd.Series[Any]:
-        """`pd.Series` mapping the group values to dataset IDs."""
+        """`pd.Series` mapping dataset IDs to the group values."""
         return self._grouper
 
     @property
