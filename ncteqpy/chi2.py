@@ -1418,7 +1418,9 @@ class Chi2(jaml.YAMLWrapper):
                     "Please provide datasets that are each of the same type_experiment"
                 )
 
-        gb = points.groupby(subplot_groupby)
+        subplot_gb = (
+            points.groupby(subplot_groupby) if subplot_groupby is not None else None
+        )
 
         kwargs_suplots_default = {
             "sharex": True,
@@ -1428,10 +1430,16 @@ class Chi2(jaml.YAMLWrapper):
             kwargs_suplots_default, kwargs_subplots
         )
 
-        ax_grid = AxesGrid(len(gb), **kwargs_subplots_updated)
+        ax_grid = AxesGrid(
+            len(subplot_gb) if subplot_gb is not None else 1, **kwargs_subplots_updated
+        )
 
-        for gb_i, ax_i in zip(gb, ax_grid.ax_real):
-            points_i = gb_i[1]
+        ax_iter = zip(
+            ax_grid.ax_real.flatten(),
+            (subplot_gb if subplot_gb is not None else [(np.nan, points)]),
+        )
+
+        for ax_i, (_, points_i) in ax_iter:
 
             if subplot_groupby is not None and subplot_label_format is None:
                 subplot_label_format_i = (
