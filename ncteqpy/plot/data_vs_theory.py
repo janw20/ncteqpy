@@ -536,8 +536,8 @@ def plot_common(
             )
 
         leg3 = AdditionalLegend(
-            1,
-            ax,
+            order=1,
+            parent=ax[0],
             handles=[Patch()],
             labels=[subplot_label_str],
             labelspacing=0,
