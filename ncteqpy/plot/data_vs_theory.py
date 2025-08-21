@@ -656,7 +656,6 @@ def _plot_theory(
     plot_binned = isinstance(x_col, list)
 
     if y_col in points:
-        # exponent_offset = 10**index_curve if abs_offset else 1
         offset_factor = 10 ** (y_offset_mul * index_curve)
         offset_summand = y_offset_add * index_curve
 
@@ -666,9 +665,17 @@ def _plot_theory(
         y = points[y_col].fillna(points["theory"], inplace=False).to_numpy()
 
         if plot_binned:
-            x = np.append(points[x_col[0]].iloc[0], points[x_col[1]])
+            x_min = points[x_col[0]].to_numpy()
+            x_max = points[x_col[1]].to_numpy()
+
+            x = np.append(x_min, x_max[-1])
             y = np.append(y, y[-1])
             kwargs_theory_default["drawstyle"] = "steps-post"
+
+            gaps = np.flatnonzero(x_min[1:] != x_max[:-1])
+            for i_gap in reversed(gaps):
+                x = np.insert(x, i_gap + 1, [x_max[i_gap], np.nan])
+                y = np.insert(y, i_gap + 1, [y[i_gap], np.nan])
         else:
             x = points[x_col].to_numpy()
 
@@ -756,9 +763,20 @@ def _plot_theory(
                 y_pdf_unc_upper = np.ones(points[y_col].size) * np.nan
                 y_pdf_unc_lower = y_pdf_unc_upper
 
-            if isinstance(x_col, list):
+            if plot_binned:
                 y_pdf_unc_lower = np.append(y_pdf_unc_lower, y_pdf_unc_lower[-1])
                 y_pdf_unc_upper = np.append(y_pdf_unc_upper, y_pdf_unc_upper[-1])
+
+                # fmt: off
+                for i_gap in reversed(gaps):  # pyright: ignore[reportPossiblyUnboundVariable]
+                # fmt: on
+                    i_gap: int
+                    y_pdf_unc_lower = np.insert(
+                        y_pdf_unc_lower, i_gap + 1, [y_pdf_unc_lower[i_gap], np.nan]
+                    )
+                    y_pdf_unc_upper = np.insert(
+                        y_pdf_unc_upper, i_gap + 1, [y_pdf_unc_upper[i_gap], np.nan]
+                    )
 
             # fmt: off
             ax[0].fill_between(
