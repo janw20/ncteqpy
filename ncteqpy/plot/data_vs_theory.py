@@ -446,8 +446,8 @@ def plot_common(
         )
 
         if e is not None and i == 0:
-            legend_handles.append(e)
-            legend_labels.append("Data")
+            legend_handles.insert(0, e)
+            legend_labels.insert(0, "Data")
 
         if chi2_annotation:
             _annotate_chi2(
@@ -497,7 +497,7 @@ def plot_common(
             "order": 2,
             "parent": ax[0],
             "handles": legend_handles,
-            "labels": ["Data", "Theory"],
+            "labels": legend_labels,
         }
         kwargs_legend_updated = update_kwargs(kwargs_legend_default, kwargs_legend)
 
