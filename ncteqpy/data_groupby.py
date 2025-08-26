@@ -9,6 +9,7 @@ from pandas._typing import Scalar
 from pandas.core.groupby import DataFrameGroupBy
 from typing_extensions import Any, Callable, Hashable, Literal, Sequence, cast
 
+from ncteqpy._typing import SequenceNotStr
 from ncteqpy.labels import nucleus_to_latex
 
 
@@ -58,8 +59,12 @@ class DatasetsGroupBy:
         props : dict[Hashable, dict[str, Any]] | None, optional
             Matplotlib properties for some or all group values, by default None. Must be given as a map from the group values to a dictionary with matplotlib properties, e.g., the latter could be `{"color": "red"}`. If `props` is None, the property cycle in `matplotlib.rcParams["axes.prop_cycle"]` is used.
         """
-        self._datasets_index = datasets_index
+        self._datasets_index = datasets_index.copy().set_index("id_dataset", drop=False)
         self._keys = by
+
+        if grouper is not None:
+            grouper.name = by  # FIXME fails if by is list
+            self._datasets_index.update(grouper)
 
         if props is not None:
             self._props = pd.DataFrame(props).T
@@ -69,25 +74,23 @@ class DatasetsGroupBy:
         order_key = (
             cast(
                 Callable[[pd.Series], pd.Series],
-                lambda key: pd.Series(np.arange(len(order)), index=order).get(key, default=np.inf * np.ones_like(key)),
+                lambda key: pd.Series(np.arange(len(order)), index=order).get(
+                    key, default=np.inf * np.ones_like(key)
+                ),
             )
             if order is not None
             else None
         )
 
-        datasets_index_reindexed = datasets_index.set_index("id_dataset", drop=False)
-
         # map id_dataset to group keys
         if isinstance(by, str):
-            self._grouper = datasets_index_reindexed[by].copy()
+            self._grouper = self._datasets_index[by].copy()
         else:
-            self._grouper = (
-                datasets_index_reindexed[by].apply(tuple, axis=1)
-            ).copy()
+            self._grouper = (self._datasets_index[by].apply(tuple, axis=1)).copy()
+            self._grouper.name = pd.core.indexes.frozen.FrozenList(  # pyright: ignore[reportAttributeAccessIssue]
+                by
+            )  # list is not hashable
 
-        if grouper is not None:
-            self._grouper.update(grouper)
-        
         self._grouper.sort_values(key=order_key, inplace=True)
 
         self._sorter = (
@@ -108,7 +111,7 @@ class DatasetsGroupBy:
             else None
         )
 
-        self._groupby = datasets_index_reindexed.sort_index(
+        self._groupby = self._datasets_index.sort_index(
             key=self._sort_key  # pyright: ignore[reportArgumentType]
         ).groupby(self._grouper, sort=False, dropna=False)
 
@@ -242,7 +245,7 @@ class DatasetsGroupBy:
         return self._sort_key
 
     def get_props(
-        self, by: Hashable | list[Hashable], of: Sequence[Hashable]
+        self, by: Hashable | list[Hashable], of: SequenceNotStr[Hashable]
     ) -> pd.DataFrame:
         """Get the matplotlib properties of a group value according to a column in `self.datasets_index` that is not grouped by. Might be ambiguous if the mapping is not one-to-one.
 
@@ -258,9 +261,14 @@ class DatasetsGroupBy:
         pd.DataFrame
             Property values.
         """
+
+        # by -> self.keys
         map_to_group_keys: pd.Series | pd.DataFrame = self.datasets_index.set_index(
             by, drop=False
-        ).loc[
+        )
+        map_to_group_keys = map_to_group_keys[
+            ~map_to_group_keys.index.duplicated()
+        ].loc[
             of, self.keys
         ]  # pyright: ignore[reportArgumentType,reportCallIssue]
 
@@ -313,4 +321,13 @@ class DatasetsGroupBy:
             else map_to_group_keys
         )
 
-        return self.props.loc[group_keys_index]
+        res = self.props.loc[group_keys_index].copy()
+        res.index = (
+            pd.Index(of, name=by[0])
+            if len(by) == 1
+            else pd.MultiIndex.from_tuples(
+                of, names=by  # pyright: ignore[reportArgumentType]
+            )
+        )
+
+        return res

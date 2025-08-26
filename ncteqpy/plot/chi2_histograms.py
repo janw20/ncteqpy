@@ -146,7 +146,7 @@ def plot_chi2_data_breakdown(
     if bar_props_groupby is not None:
 
         bar_props = bar_props_groupby.get_props(
-            chi2_grouped.index.names,
+            chi2_grouped.index.name,
             chi2_grouped.index,  # pyright: ignore [reportArgumentType]
         )
 
@@ -293,6 +293,12 @@ def plot_chi2_histogram(
         lim = np.max(np.abs([chi2["chi2"].min(), chi2["chi2"].max()]))
         bins = "auto"
 
+    def chi2_k1_func(x):
+        return 1 / np.sqrt(2 * np.pi * x) * np.exp(-x / 2)
+
+    chi2_k1_x = np.logspace(-5, np.log10(lim), 200, endpoint=True)
+    chi2_k1_y = chi2_k1_func(chi2_k1_x)
+
     if subplot_groupby is not None:
         chi2_groupby = (
             chi2.sort_values(
@@ -324,6 +330,8 @@ def plot_chi2_histogram(
         }
         kwargs = update_kwargs(kwargs_histogram_default, kwargs_histogram, i)
         ax.hist(**kwargs)
+
+        ax.plot(chi2_k1_x, chi2_k1_y, scaley=False)
 
     if subplot_groupby is not None:
         ax_grid.set_labels(
