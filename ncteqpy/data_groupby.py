@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from pandas._typing import Scalar
 from pandas.core.groupby import DataFrameGroupBy
+from pandas.core.indexes.frozen import FrozenList
 from typing_extensions import Any, Callable, Hashable, Literal, Sequence, cast
 
 from ncteqpy._typing import SequenceNotStr
@@ -35,12 +36,12 @@ class DatasetsGroupBy:
         datasets_index: pd.DataFrame,
         by: str | list[str],
         grouper: pd.Series[Any] | None = None,
-        order: list[Hashable] | None = None,
+        order: SequenceNotStr[Hashable] | None = None,
         labels: dict[Hashable, str] | None = None,
         label_format: str | None = None,
         props: dict[Hashable, dict[str, Any]] | None = None,
     ) -> None:
-        """Creates a `DataFrameGroupBy`. Instead of instantiating this class directly, you should call the `ncteqpy.Datasets.groupby` method.
+        """Creates a `DatasetsGroupBy`. Instead of instantiating this class directly, you should call the `ncteqpy.Datasets.groupby` method.
 
         Parameters
         ----------
@@ -63,8 +64,12 @@ class DatasetsGroupBy:
         self._keys = by
 
         if grouper is not None:
-            grouper.name = by  # FIXME fails if by is list
-            self._datasets_index.update(grouper)
+            grouper.name = FrozenList(by) if isinstance(by, list) else by
+            self._datasets_index.update(
+                pd.DataFrame(
+                    grouper.to_list(), columns=np.atleast_1d(by), index=grouper.index
+                )
+            )
 
         if props is not None:
             self._props = pd.DataFrame(props).T
@@ -220,22 +225,15 @@ class DatasetsGroupBy:
     def props(self) -> pd.DataFrame:
         """Matplotlib properties for the group values. Index: group values, columns: property names"""
         if self._props is None:
-            self._prop_cycle = cycle(mpl.rcParams["axes.prop_cycle"])
-
             self._props = pd.DataFrame(
-                {k: next(self._prop_cycle) for k in self._groupby.groups.keys()}
-            ).T
-            self._props.index.set_names(self._keys, inplace=True)
-        elif not self._props.index.isin(self._groupby.groups.keys()).all():
-            self._prop_cycle = cycle(mpl.rcParams["axes.prop_cycle"])
-
-            missing = {
-                k: next(self._prop_cycle)
-                for k in self._groupby.groups.keys()
-                if not k in self._props.index
-            }
-
-            self._props = pd.concat([self._props, pd.DataFrame(missing).T])
+                index=(
+                    pd.Index([], name=self.keys)
+                    if not isinstance(self.keys, list)
+                    else pd.MultiIndex.from_arrays(
+                        len(self.keys) * [[]], names=self.keys
+                    )
+                )
+            )
 
         return self._props
 
