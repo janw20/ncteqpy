@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Hashable
 
 import matplotlib.transforms as mtransforms
 import numpy as np
@@ -12,8 +13,7 @@ from typing_extensions import Any, Literal, cast, override
 
 from ncteqpy._typing import SequenceNotStr
 from ncteqpy.chi2 import Chi2
-from ncteqpy.data import Datasets
-from ncteqpy.labels import nucleus_to_latex
+from ncteqpy.data_groupby import DatasetsGroupBy
 from ncteqpy.util import update_kwargs
 
 pdfplotter_imported = False
@@ -34,20 +34,18 @@ GroupByLabels = Scalar | tuple[Scalar, ...] | list[Scalar] | list[tuple[Scalar, 
 class Chi2PDFCorrelation(ABC):
     """Abstract base class for x- and Q²-dependent correlations between the χ² function and the PDFs."""
 
-    _datasets: Datasets
     _chi2: Chi2
     _pdf_set: pp.PDFSet
-    _groupby: str | list[str]
+    _groupby: DatasetsGroupBy | None
     _grouper: pd.Series
     _data: pd.DataFrame
     _data_total: pd.DataFrame
 
     def __init__(
         self,
-        datasets: Datasets,
         chi2: Chi2,
         pdfs: pp.PDFSet,
-        groupby: str | list[str] = "id_dataset",
+        groupby: DatasetsGroupBy | None = None,
     ) -> None:
         """Creates an instance to calculate and plot the correlation.
 
@@ -66,22 +64,17 @@ class Chi2PDFCorrelation(ABC):
         if not pdfplotter_imported:
             raise ValueError("Please install pdfplotter to use L2Sensitivity")
 
-        self._datasets = datasets
         self._chi2 = chi2
         self._pdf_set = pdfs
         self._groupby = groupby
 
-        if groupby == "id_dataset":
-            self._grouper = pd.Series(
-                datasets.index["id_dataset"].to_numpy(),
-                index=datasets.index["id_dataset"],
-            )
-        elif not isinstance(groupby, list):
-            self._grouper = datasets.index.set_index("id_dataset")[groupby]
+        if groupby is not None:
+            self._grouper = groupby.grouper
         else:
-            self._grouper = datasets.index.set_index("id_dataset")[groupby].apply(
-                tuple, axis=1
+            ids: pd.Index[int] = (
+                chi2.snapshots_breakdown_datasets.columns.get_level_values("id_dataset")
             )
+            self._grouper = pd.Series(ids.to_numpy(), index=ids)
 
         self._data = pd.DataFrame(
             index=pd.MultiIndex.from_product(
@@ -92,8 +85,8 @@ class Chi2PDFCorrelation(ABC):
                 names=["Q", "x"],
             ),
             columns=pd.MultiIndex.from_product(
-                (len(self._grouper.index.names) + 1) * [[]],
-                names=["observable", *self._grouper.index.names],
+                (len(self.grouper.index.names) + 1) * [[]],
+                names=["observable", *self.grouper.index.names],
             ),
         )
 
@@ -132,7 +125,7 @@ class Chi2PDFCorrelation(ABC):
         return self._data_total
 
     @property
-    def groupby(self) -> str | list[str]:
+    def groupby(self) -> DatasetsGroupBy | None:
         """The column(s) the correlation curves are grouped by"""
         return self._groupby
 
@@ -198,7 +191,7 @@ class Chi2PDFCorrelation(ABC):
         elif not isinstance(group_labels, list):
             group_labels = cast(list[Scalar] | list[tuple[Scalar, ...]], [group_labels])
 
-        x, Q, _ = self.pdf_set._flatten_x_Q(x, Q, Q2)
+        x_flat, Q_flat, _ = self.pdf_set._flatten_x_Q(x, Q, Q2)
 
         if not str(observable) in self.data.columns.get_level_values("observable"):
             pdf_data = pd.DataFrame(
@@ -213,8 +206,8 @@ class Chi2PDFCorrelation(ABC):
                         list[SequenceNotStr[float]],
                         [
                             range(self.pdf_set.num_errors),
-                            self.pdf_set.Q,
-                            self.pdf_set.x,
+                            np.atleast_1d(self.pdf_set.Q),
+                            np.atleast_1d(self.pdf_set.x),
                         ],
                     ),
                     names=["id_eigendirection", "Q", "x"],
@@ -249,14 +242,16 @@ class Chi2PDFCorrelation(ABC):
 
             self._data = pd.concat([self._data, res], axis=1)
 
-        return self._data.loc[idx[Q, x], idx[str(observable), group_labels]]
+        # fmt: off
+        return self._data.loc[idx[Q_flat, x_flat], idx[str(observable), group_labels]] # pyright: ignore[reportArgumentType, reportCallIssue]
+        # fmt: on
 
     def get_total(
         self,
         observable: sp.Basic,
-        x: float | npt.NDArray[np.float64] | None = None,  # FIXME
-        Q: float | npt.NDArray[np.float64] | None = None,  # FIXME
-        Q2: float | npt.NDArray[np.float64] | None = None,  # FIXME
+        x: float | npt.NDArray[np.float64] | None = None,
+        Q: float | npt.NDArray[np.float64] | None = None,
+        Q2: float | npt.NDArray[np.float64] | None = None,
     ) -> pd.DataFrame:
         """Get the actual values of the correlation between the total χ² and the PDFs. Calculated values are cached in `data_total`.
 
@@ -277,7 +272,7 @@ class Chi2PDFCorrelation(ABC):
             Calculated values of the correlation for PDF observable `observable` and groups `group_labels`.
         """
 
-        x, Q, _ = self.pdf_set._flatten_x_Q(x, Q, Q2)
+        x_flat, Q_flat, _ = self.pdf_set._flatten_x_Q(x, Q, Q2)
 
         if not str(observable) in self.data_total.columns.get_level_values(
             "observable"
@@ -323,7 +318,9 @@ class Chi2PDFCorrelation(ABC):
 
             self._data_total = pd.concat([self._data_total, res], axis=1)
 
-        return self._data_total.loc[idx[Q, x], idx[str(observable)]]
+        # fmt: off
+        return self._data_total.loc[idx[Q_flat, x_flat], idx[str(observable)]] # pyright: ignore[reportArgumentType]
+        # fmt: on
 
     def plot(
         self,
@@ -332,7 +329,6 @@ class Chi2PDFCorrelation(ABC):
         group_labels: GroupByLabels | None = None,
         group_highlights: GroupByLabels | None = None,
         group_label_style: Literal["legend", "curve"] = "curve",
-        group_label_format: str | None = None,
         max_highlights: int = 0,
         x: float | npt.NDArray[np.float64] | None = None,
         Q: float | npt.NDArray[np.float64] | None = None,
@@ -358,8 +354,6 @@ class Chi2PDFCorrelation(ABC):
             Which curves to highlight, by default all. E.g., if the `groupby` is `id_dataset`, `group_labels` can be a data set ID or a list of multiple data set IDs. If multiple columns are chosen for grouping, i.e., `groupby` is a list, `group_labels` must be given as a tuple or a list of tuples.
         group_label_style : Literal["legend", "curve"], optional
             If the labels of the group are shown in the legend or annotated on each curve, by default "curve".
-        group_label_format : str | None, optional
-            Format string to control formatting of each label. By default no formatting is applied, i.e., only the label is shown. Fields must be named, where possible names are the columns of the `index` of the `Datasets` that were passed to the constructor, as well as `A1_sym`, `A2_sym`, `A_heavier_sym`, and `A_lighter_sym`, giving the symbol of the respective nucleus.
         max_highlights : int, optional
             How many of largest curves to highlight, by default 0. The largest curves are determined by taking the maximum of the absolute values of each curve on the plotted range and sorting by the maxima. If `max_highlights` is negative, minima are used instead.
         x : float | npt.NDArray[np.float64] | None, optional
@@ -448,45 +442,19 @@ class Chi2PDFCorrelation(ABC):
 
         ax.plot(self.pdf_set.x, values_total, **kwargs)
 
-        gb_data = self._datasets.index.set_index("id_dataset").groupby(
-            self.grouper, dropna=False
-        )
-
         i_curves = 0
         i_curves_background = 0
 
         for label, l2 in values.iterrows():
 
-            group_label: str = label[1]
-
-            data = gb_data.get_group(group_label)
-
-            A_symbols = {
-                "A1_sym": nucleus_to_latex(
-                    A=data.iloc[0]["A1"], Z=data.iloc[0]["Z1"], superscript=True
-                ),
-                "A2_sym": nucleus_to_latex(
-                    A=data.iloc[0]["A2"], Z=data.iloc[0]["Z2"], superscript=True
-                ),
-                "A_lighter_sym": nucleus_to_latex(
-                    A=data.iloc[0]["A_lighter"],
-                    Z=data.iloc[0]["Z_lighter"],
-                    superscript=True,
-                ),
-                "A_heavier_sym": nucleus_to_latex(
-                    A=data.iloc[0]["A_heavier"],
-                    Z=data.iloc[0]["Z_heavier"],
-                    superscript=True,
-                ),
-            }
+            # fmt: off
+            group_label: Scalar | tuple[Scalar] = label[1] # pyright: ignore[reportIndexIssue]
+            # fmt: on
 
             group_label_annotation: str = (
-                group_label
-                if group_label_format is None
-                else group_label_format.format(
-                    **data.iloc[0].to_dict(),
-                    **A_symbols,
-                )
+                self.groupby.labels.loc[group_label]
+                if self.groupby is not None
+                else str(group_label)
             )
 
             highlighted = not all_highlights or group_label in all_highlights
@@ -497,14 +465,41 @@ class Chi2PDFCorrelation(ABC):
                     "lw": 1.2,
                     "label": group_label_annotation,
                 }
+                # self.groupby can override zorder, lw, label for the highlighted curves
+                if self.groupby is not None:
+                    kwargs_default = update_kwargs(
+                        kwargs_default,
+                        self.groupby.get_props(
+                            by=cast(Hashable | list[Hashable], self.groupby.keys),
+                            of=[group_label],
+                        )
+                        .iloc[0]
+                        .to_dict(),
+                    )
+
                 kwargs = update_kwargs(kwargs_default, kwargs_curves, i_curves)
                 i_curves += 1
             else:
-                kwargs_default = {
-                    "color": "silver",
-                    "zorder": 1.1,
-                    "lw": 0.5,
-                }
+                # self.groupby cannot override color, zorder, lw for the non-highlighted curves
+                kwargs_default = {}
+                if self.groupby is not None and group_label in self.groupby.props.index:
+                    kwargs_default = update_kwargs(
+                        kwargs_default,
+                        self.groupby.get_props(
+                            by=cast(Hashable | list[Hashable], self.groupby.keys),
+                            of=[group_label],
+                        )
+                        .iloc[0]
+                        .to_dict(),
+                    )
+                kwargs_default = update_kwargs(
+                    kwargs_default,
+                    {
+                        "color": "silver",
+                        "zorder": 1.1,
+                        "lw": 0.5,
+                    },
+                )
                 kwargs = update_kwargs(
                     kwargs_default, kwargs_curves_background, i_curves_background
                 )
@@ -850,7 +845,7 @@ class DeltaChi2Eff(Chi2PDFCorrelation):
             else [chi2_diff.index]
         )
         result.index = pd.MultiIndex.from_product(
-            [*pdf_index, *chi2_index],
+            [*pdf_index, *chi2_index],  # pyright: ignore[reportArgumentType]
             names=pdf_diff.index.names + chi2_diff.index.names,
         )
 
