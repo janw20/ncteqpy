@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from itertools import cycle
-from typing import Any
 
 import matplotlib.pyplot as plt
 import matplotlib.text as mtext
@@ -10,25 +9,21 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import sympy as sp
+from typing_extensions import Any, Hashable, cast
 
+from ncteqpy.data_groupby import DatasetsGroupBy
 from ncteqpy.util import update_kwargs
-
-# GroupbyType = str | float | tuple[str | float, ...]
 
 
 def plot_kinematic_coverage(
     ax: plt.Axes,
     points: pd.DataFrame,
     points_before_cuts: pd.DataFrame | None = None,
-    groupby: str | pd.Series = "id_dataset",
-    # highlight_groups: (
-    #     GroupbyType | list[GroupbyType] | list[list[GroupbyType]] | None
-    # ) = None,  # TODO: group highlighting
+    groupby: DatasetsGroupBy | None = None,
     kinematic_variables: tuple[str, str] = ("x", "Q2"),
     cuts: list[tuple[float | sp.Rel | sp.Expr, npt.NDArray[np.floating]]] | None = None,
     cuts_labels: list[tuple[float, str] | None] | None = None,
     cuts_labels_offset: float | list[float | None] | None = None,
-    labels: str | list[str] | None = None,
     kwargs_points: dict[str, Any] | list[dict[str, Any] | None] | None = None,
     kwargs_points_before_cuts: (
         dict[str, Any] | list[dict[str, Any] | None] | None
@@ -60,11 +55,9 @@ def plot_kinematic_coverage(
         Labels to annotate the cuts by, by default None. These must be in the same ordering as `cuts`.
     cuts_labels_offset : float | list[float  |  None] | None, optional
         Offset in units of font size to shift the label orthogonally away from the curve representing a cut, by default None. Must be in the same order as `cuts` and `cuts_labels`.
-    labels : str | list[str] | None, optional
-        Labels to overwrite the groupby labels with, by default None.
     kwargs_points : dict[str, Any] | list[dict[str, Any] | None] | None, optional
         Keyword arguments to adjust plotting the points, passed to `ax.plot`, by default None.
-    kwargs_points_before_cuts : dict[str, Any]  |  list[dict[str, Any]  |  None]  |  None, optional
+    kwargs_points_before_cuts : dict[str, Any] | list[dict[str, Any] | None] | None, optional
         Keyword arguments to adjust plotting the points before cuts, passed to `ax.plot`, by default None.
     kwargs_cuts : dict[str, Any] | list[dict[str, Any] | None] | None, optional
         Keyword arguments to adjust plotting the cuts, passed to `ax.plot`, by default None. If a `list` is passed, it must be in the same order as `cuts`.
@@ -72,27 +65,24 @@ def plot_kinematic_coverage(
         Keyword arguments to adjust plotting the labels of the cuts, passed to `ax.annotate`, by default None. If a `list` is passed, it must be in the same order as `cuts_labels`.
     """
 
-    if isinstance(labels, str):
-        labels = [labels]
-
-    # if highlight_groups is not None:
-    #     raise NotImplementedError()
-
-    # make highlight_groups list of lists
-    # if highlight_groups is not None:
-    #     if not isinstance(highlight_groups, list):
-    #         highlight_groups = [[highlight_groups]]
-    #     else:
-    #         highlight_groups = [
-    #             [h] if not isinstance(h, list) else h for h in highlight_groups
-    #         ]
-
     markers = cycle(["o", "v", "p", "^", "P", ">", "*", "<", "X", "D", "h"])
-    prop_cycle = cycle(plt.rcParams["axes.prop_cycle"])
 
-    points_gb = points.groupby(groupby)
+    grouper = groupby.grouper if groupby is not None else "id_dataset"
+    sort_key = groupby.sort_key if groupby is not None else None
+
+    points_gb = (
+        points.set_index("id_dataset")
+        .sort_index(key=sort_key)  # pyright: ignore[reportArgumentType]
+        .groupby(grouper, sort=False, dropna=False)
+    )
     points_before_cuts_gb = (
-        points_before_cuts.groupby(groupby) if points_before_cuts is not None else None
+        (
+            points_before_cuts.set_index("id_dataset")
+            .sort_index(key=sort_key)  # pyright: ignore[reportArgumentType]
+            .groupby(grouper, sort=False, dropna=False)
+        )
+        if points_before_cuts is not None
+        else None
     )
 
     for i, (label_i, p_i) in enumerate(points_gb):
@@ -102,24 +92,23 @@ def plot_kinematic_coverage(
             points_before_cuts_gb is not None
             and label_i in points_before_cuts_gb.groups
         ):
-            # assert points_before_cuts is not None # can't be None because of how we set points_before_cuts_gb
-
             kwargs_default = {
                 "marker": marker,
                 "markersize": 3,
                 "ls": "",
-                "zorder": 1.1,
-                "color": "lightgray",
             }
-
-            # if (
-            #     highlight_groups is None
-            #     or highlight_groups is not None
-            #     and label_i in highlight_groups
-            # ):
-            #     kwargs_default |= next(prop_cycle)
-            # else:
-            #     kwargs_default["color"] = "lightgray"
+            if groupby is not None:
+                kwargs_default = update_kwargs(
+                    kwargs_default,
+                    groupby.get_props(
+                        by=cast(Hashable | list[Hashable], groupby.keys), of=[label_i]
+                    )
+                    .iloc[0]
+                    .to_dict(),
+                )
+            kwargs_default = update_kwargs(
+                kwargs_default, {"color": "lightgray", "zorder": 1.1}
+            )
 
             kwargs = update_kwargs(kwargs_default, kwargs_points_before_cuts, i)
 
@@ -136,8 +125,18 @@ def plot_kinematic_coverage(
             "markersize": 3,
             "ls": "",
             "zorder": 1.2,
-            "label": str(label_i),
+            "label": groupby.labels[label_i] if groupby is not None else str(label_i),
         }
+        if groupby is not None:
+            kwargs_default = update_kwargs(
+                kwargs_default,
+                groupby.get_props(
+                    by=cast(Hashable | list[Hashable], groupby.keys),
+                    of=[label_i],
+                )
+                .iloc[0]
+                .to_dict(),
+            )
 
         kwargs = update_kwargs(kwargs_default, kwargs_points, i)
 

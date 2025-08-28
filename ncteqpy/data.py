@@ -580,8 +580,9 @@ class Datasets(jaml.YAMLWrapper):
                     "type_theory": labels.theory_yaml_to_py[
                         cast(str, jaml.nested_get(data, ["GridSpec", "TypeTheory"]))
                     ],
-                    "types_uncertainties": [labels.uncertainties_yaml_to_py[k] for k in 
-                        cast(
+                    "types_uncertainties": [
+                        labels.uncertainties_yaml_to_py[k]
+                        for k in cast(
                             list[str],
                             jaml.nested_get(data, ["GridSpec", "TypeUncertainties"]),
                         )
@@ -647,7 +648,7 @@ class Datasets(jaml.YAMLWrapper):
         ax: plt.Axes,
         kinematic_variables: tuple[str, str] = ("x", "Q2"),
         filter_query: str | None = None,
-        groupby: str = "id_dataset",
+        groupby: DatasetsGroupBy | None = None,
         show_cut_points: Literal["before", "after", "both"] = "both",
         cuts: (
             list[tuple[float | sp.Rel | sp.Expr, npt.NDArray[np.floating]]] | None
@@ -655,12 +656,43 @@ class Datasets(jaml.YAMLWrapper):
         cuts_labels: list[tuple[float, str] | None] | None = None,
         cuts_labels_offset: float | list[float | None] | None = None,
         kwargs_points: dict[str, Any] | list[dict[str, Any] | None] | None = None,
-        kwargs_points_after_cuts: (
+        kwargs_points_before_cuts: (
             dict[str, Any] | list[dict[str, Any] | None] | None
         ) = None,
         kwargs_cuts: dict[str, Any] | list[dict[str, Any] | None] | None = None,
         kwargs_cuts_labels: dict[str, Any] | list[dict[str, Any] | None] | None = None,
     ) -> None:
+        """Plots the data points in the plane of 2 kinematic variables (by default x and Q²).
+
+        Parameters
+        ----------
+        ax : plt.Axes
+            The axes to plot on.
+        kinematic_variables : tuple[str, str], optional
+            Kinematic variables to display on the x and y axis, by default ("x", "Q2"). Must be in the columns of `points` and `points_before_cuts`.
+        groupby : DatasetsGroupby | None, optional
+            How to group the points, by default no grouping.
+        show_cut_points : Literal["before", "after", "both"], optional.
+            If the points before or after cuts should be shown, by default both.
+        cuts : list[tuple[float | sp.Rel | sp.Expr, npt.NDArray[np.floating]]] | None, optional
+            Cuts to display as curves, by default None. A cut is given as a tuple with first element a float (for a constant cut on the y axis) or a sympy expression that has at most one free variable which represents the x axis values, and second element a numpy array that gives the x axis values of the curve. For example, to display a W² cut on the (x, Q²) plane, pass
+            ```
+                cuts=[(nc.Q2_dis.subs({nc.W2: 1.7**2}), np.logspace(-0.7, -1e-3, 200))]
+            ```
+            (where `ncteqpy` is imported as `nc` and `numpy` is imported as `np`).
+        cuts_labels : list[tuple[float, str]  |  None] | None, optional
+            Labels to annotate the cuts by, by default None. These must be in the same ordering as `cuts`.
+        cuts_labels_offset : float | list[float  |  None] | None, optional
+            Offset in units of font size to shift the label orthogonally away from the curve representing a cut, by default None. Must be in the same order as `cuts` and `cuts_labels`.
+        kwargs_points : dict[str, Any] | list[dict[str, Any] | None] | None, optional
+            Keyword arguments to adjust plotting the points, passed to `ax.plot`, by default None.
+        kwargs_points_before_cuts : dict[str, Any] | list[dict[str, Any] | None] | None, optional
+            Keyword arguments to adjust plotting the points before cuts, passed to `ax.plot`, by default None.
+        kwargs_cuts : dict[str, Any] | list[dict[str, Any] | None] | None, optional
+            Keyword arguments to adjust plotting the cuts, passed to `ax.plot`, by default None. If a `list` is passed, it must be in the same order as `cuts`.
+        kwargs_cuts_labels : dict[str, Any] | list[dict[str, Any] | None] | None, optional
+            Keyword arguments to adjust plotting the labels of the cuts, passed to `ax.annotate`, by default None. If a `list` is passed, it must be in the same order as `cuts_labels`.
+        """
 
         filtered_points = (
             self.points.query(filter_query) if filter_query is not None else self.points
@@ -683,15 +715,15 @@ class Datasets(jaml.YAMLWrapper):
 
         plot_kinematic_coverage(
             ax=ax,
-            points=filtered_points_after_cuts,
-            points_before_cuts=filtered_points,
+            points=points,
+            points_before_cuts=points_before_cuts,
             kinematic_variables=kinematic_variables,
             groupby=groupby,
             cuts=cuts,
             cuts_labels=cuts_labels,
             cuts_labels_offset=cuts_labels_offset,
             kwargs_points=kwargs_points,
-            kwargs_points_before_cuts=kwargs_points_after_cuts,
+            kwargs_points_before_cuts=kwargs_points_before_cuts,
             kwargs_cuts=kwargs_cuts,
             kwargs_cuts_labels=kwargs_cuts_labels,
         )
