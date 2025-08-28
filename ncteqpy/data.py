@@ -11,6 +11,7 @@ import pandas as pd
 import sympy as sp
 import yaml
 
+from ncteqpy._typing import SequenceNotStr
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
 from ncteqpy.cuts import Cuts, cut_accepts
@@ -233,11 +234,33 @@ class Datasets(jaml.YAMLWrapper):
         self,
         by: str | list[str],
         grouper: pd.Series[Any] | None = None,
-        order: list[Hashable] | None = None,
+        order: SequenceNotStr[Hashable] | None = None,
         labels: dict[Hashable, str] | None = None,
         label_format: str | None = None,
         props: dict[Hashable, dict[str, Any]] | None = None,
     ) -> DatasetsGroupBy:
+        """Groups the data sets by one or more variables.
+
+        Parameters
+        ----------
+        by : str | list[str]
+            Key(s) to group the data sets by, must be column labels of `Datasets.index`, e.g., `"type_experiment"` or `["A_heavier", "Z_heavier"]`.
+        grouper : pd.Series | None, optional
+            `Series` mapping some or all dataset IDs to group values. This takes precedence over the values in `Datasets.index`.
+        order : list[Hashable] | None, optional
+            Custom ordering of the group values, by default None. If `by` is a list, this must be a list of tuples.
+        labels : dict[Hashable, str] | None, optional
+            Manual relabeling of some or all group values, by default None. Must be given as a map from the group values to the new labels and takes precedence over `label_format`.
+        label_format : str | None, optional
+            Format string applied to all group values, by default None. Fields in the format string must be labeled by column names in `Datasets.index`, or by `A1_sym`, `A2_sym`, `A_lighter_sym`, `A_heavier_sym`, which formats the element symbol of the respective nucleus.
+        props : dict[Hashable, dict[str, Any]] | None, optional
+            Matplotlib properties for some or all group values, by default None. Must be given as a map from the group values to a dictionary with matplotlib properties, e.g., the latter could be `{"color": "red"}`. If `props` is None, the property cycle in `matplotlib.rcParams["axes.prop_cycle"]` is used.
+
+        Returns
+        -------
+        DatasetsGroupBy
+            The grouped data sets.
+        """
         return DatasetsGroupBy(
             datasets_index=self.index,
             by=by,
