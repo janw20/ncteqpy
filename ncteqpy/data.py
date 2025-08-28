@@ -247,7 +247,7 @@ class Datasets(jaml.YAMLWrapper):
             Key(s) to group the data sets by, must be column labels of `Datasets.index`, e.g., `"type_experiment"` or `["A_heavier", "Z_heavier"]`.
         grouper : pd.Series | None, optional
             `Series` mapping some or all dataset IDs to group values. This takes precedence over the values in `Datasets.index`.
-        order : list[Hashable] | None, optional
+        order : SequenceNotStr[Hashable] | None, optional
             Custom ordering of the group values, by default None. If `by` is a list, this must be a list of tuples.
         labels : dict[Hashable, str] | None, optional
             Manual relabeling of some or all group values, by default None. Must be given as a map from the group values to the new labels and takes precedence over `label_format`.
