@@ -36,6 +36,7 @@ class DatasetsGroupBy:
         datasets_index: pd.DataFrame,
         by: str | list[str],
         grouper: pd.Series[Any] | None = None,
+        sort: Literal["ascending", "descending"] | None = None,
         order: SequenceNotStr[Hashable] | None = None,
         labels: dict[Hashable, str] | None = None,
         label_format: str | None = None,
@@ -51,6 +52,8 @@ class DatasetsGroupBy:
             Key(s) to group the data sets by, must be column labels of `datasets_index`, e.g., `"type_experiment"` or `["A_heavier", "Z_heavier"]`.
         grouper : pd.Series | None, optional
             `Series` mapping some or all dataset IDs to group values. This takes precedence over the values in `datasets_index`.
+        sort : Literal["ascending", "descending"] | None, optional
+            If the group values should be sorted in ascending or descending order, by default no sorting.
         order : SequenceNotStr[Hashable] | None, optional
             Custom ordering of the group values, by default None. If `by` is a list, this must be a list of tuples.
         labels : dict[Hashable, str] | None, optional
@@ -75,18 +78,6 @@ class DatasetsGroupBy:
             self._props = pd.DataFrame(props).T
             self._props.index.set_names(self._keys, inplace=True)
 
-        # map group keys to index of group key in `order`
-        order_key = (
-            cast(
-                Callable[[pd.Series], pd.Series],
-                lambda key: pd.Series(np.arange(len(order)), index=order).get(
-                    key, default=np.inf * np.ones_like(key)
-                ),
-            )
-            if order is not None
-            else None
-        )
-
         # map id_dataset to group keys
         if isinstance(by, str):
             self._grouper = self._datasets_index[by].copy()
@@ -96,24 +87,26 @@ class DatasetsGroupBy:
                 by
             )  # list is not hashable
 
-        self._grouper.sort_values(key=order_key, inplace=True)
+        if sort is not None:
+            self._grouper.sort_values(ascending=(sort == "ascending"), inplace=True)
 
-        self._sorter = (
-            pd.Series(
-                np.arange(len(self._grouper)),
-                index=self._grouper.index,
+        if order is not None:
+            order_key = cast(
+                Callable[[pd.Series], pd.Series],
+                lambda key: pd.Series(np.arange(len(order)), index=order).get(
+                    key, default=np.inf * np.ones_like(key)
+                ),
             )
-            if order is not None
-            else None
+            self._grouper.sort_values(key=order_key, inplace=True)
+
+        self._sorter = pd.Series(
+            np.arange(len(self._grouper)),
+            index=self._grouper.index,
         )
 
-        self._sort_key = (
-            cast(
-                Callable[[pd.Series], pd.Series],
-                self._sorter.get,
-            )
-            if self._sorter is not None
-            else None
+        self._sort_key = cast(
+            Callable[[pd.Series], pd.Series],
+            self._sorter.get,
         )
 
         self._groupby = self._datasets_index.sort_index(

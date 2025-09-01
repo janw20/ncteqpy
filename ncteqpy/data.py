@@ -234,6 +234,7 @@ class Datasets(jaml.YAMLWrapper):
         self,
         by: str | list[str],
         grouper: pd.Series[Any] | None = None,
+        sort: Literal["ascending", "descending"] | None = None,
         order: SequenceNotStr[Hashable] | None = None,
         labels: dict[Hashable, str] | None = None,
         label_format: str | None = None,
@@ -247,6 +248,8 @@ class Datasets(jaml.YAMLWrapper):
             Key(s) to group the data sets by, must be column labels of `Datasets.index`, e.g., `"type_experiment"` or `["A_heavier", "Z_heavier"]`.
         grouper : pd.Series | None, optional
             `Series` mapping some or all dataset IDs to group values. This takes precedence over the values in `Datasets.index`.
+        sort : Literal["ascending", "descending"] | None, optional
+            If the group values should be sorted in ascending or descending order, by default no sorting.
         order : SequenceNotStr[Hashable] | None, optional
             Custom ordering of the group values, by default None. If `by` is a list, this must be a list of tuples.
         labels : dict[Hashable, str] | None, optional
@@ -265,6 +268,7 @@ class Datasets(jaml.YAMLWrapper):
             datasets_index=self.index,
             by=by,
             grouper=grouper,
+            sort=sort,
             order=order,
             labels=labels,
             label_format=label_format,
