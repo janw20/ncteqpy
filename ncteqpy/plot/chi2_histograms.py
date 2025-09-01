@@ -174,8 +174,8 @@ def plot_chi2_data_breakdown(
         kwargs_legend_default = {}
         kwargs_legend_updated = update_kwargs(kwargs_legend_default, kwargs_legend)
         ax.legend(
-            [mpatches.Patch(**v) for _, v in bar_props_groupby.props.iterrows()],
-            bar_props_groupby.labels[bar_props_groupby.props.index]
+            [mpatches.Patch(**v) for _, v in bar_props_groupby.props.loc[chi2_grouped.index].iterrows()],
+            bar_props_groupby.labels[chi2_grouped.index]
             + " ("
             + (
                 chi2_grouped_props
