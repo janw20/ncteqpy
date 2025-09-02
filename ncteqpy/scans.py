@@ -481,13 +481,42 @@ class ParameterScan1D(ParameterScan):
         groups_labels: dict[str, str] | None = None,
         highlight_groups: str | list[str] | None = None,
         highlight_important_groups: int | None = None,
-        legend: Literal["true", "last", "false"] = "last",
+        legend: bool | Literal["last","first"] = "last",
         kwargs_chi2_total: dict[str, Any] | None = None,
         kwargs_chi2_minimum: dict[str, Any] | None = None,
         kwargs_chi2_groups: dict[str, Any] | list[dict[str, Any] | None] | None = None,
         **kwargs: Any,
     ) -> None:
+        """Plot the parameter scan(s)
 
+        Parameters
+        ----------
+        ax : plt.Axes or sequence of plt.Axes
+            Axes to plot on. If a sequence is given, its length must match the number of eigenvectors to plot.
+        parameter :
+            Parameters to plot. If `None`, all scanned parameters are plotted.
+        datasets : Datasets, optional
+            Datasets object containing the dataset metadata. Required if `data_groupby` is not `None`.
+        data_groupby : str, optional
+            Column name in `datasets.index` to group datasets by. If `None`, no grouping is applied.
+        groups_labels : dict, optional
+            Mapping of group names (as in `data_groupby`) to labels to use in the legend. If `None`, the group names are used as labels.
+        highlight_groups : str or list of str, optional
+            Group name or list of group names (as in `data_groupby`) to highlight in the plot. Highlighted groups are drawn with thicker lines and higher opacity. 
+            If `None`, no groups are highlighted.
+        highlight_important_groups : int, optional
+            Number of most important groups (by maximum chi2 contribution) to highlight in the plot. If `None`, no groups are highlighted.
+        plot_minimum : bool, default True
+            Whether to mark the minimum chi2 point on the plot.
+        legend : bool or 'last' or 'first', default 'last'
+            Whether to show a legend. If 'last', the legend is shown only on the last subplot. If 'first', the legend is shown only on the first subplot.
+        kwargs_chi2_total : dict, optional
+            Additional keyword arguments passed to `ax.plot` when plotting the total chi2 curve.
+        kwargs_chi2_minimum : dict, optional
+            Additional keyword arguments passed to when plotting the minimum chi2
+        kwargs_chi2_groups : dict or list of dict, optional
+            Additional keyword arguments passed to `ax.plot` when plotting the grouped chi2 curves. If a list is given, its length must match the number of groups. If a dict is given, the same arguments are used for all groups.
+        """
         if data_groupby is not None:
             if self.profile_chi2_per_data is None:
                 raise ValueError(
@@ -846,7 +875,35 @@ class ParameterScan2D(ParameterScan):
         tolerance: float | None = None,
         **kwargs: Any,
     ) -> None:
+        """
+        Plot the 2D eigenvector scan.
 
+        Parameters
+        ----------
+        ax : plt.Axes or Sequence[plt.Axes]
+            Axes to plot on.
+        parameters : tuple[str, str] or list[tuple[str, str]], optional
+            Parameters to plot, by default None (all).
+        draw_contour : bool, optional
+            Whether to draw contour lines, by default True.
+            If True and levels!=None: contours at levels. 
+            If True and levels==None: Contours at tolerance/2, tolerance and 2*tolerance. 
+            If tolerance==None contour at vmax/2
+        plot_minimum : bool, optional
+            Whether to plot the minimum point, by default True.
+        levels : list, optional
+            Contour levels, by default None (uses tolerance or vmax).
+        cbar_scale : Literal["linear", "log"], optional
+            Colorbar scale, by default "linear".
+        vmax : float, optional
+            Maximum value for colorbar, by default 1000.
+        colormap : str, optional
+            Colormap to use, by default "Spectral_r".
+        tolerance : float, optional
+            Tolerance for chi2 contour, if no levels are chosen, by default None (uses target_delta_chi2).
+            if cbar_scale=="linear": tolerance is the center of the color spectrum, e.g. the brightest color.
+            if cbar_scale=="log", choice of tolerance has no influence on colors
+        """
         minimum = self.minimum_params.copy()
         minimum["chi2"] = self.minimum_chi2
 
@@ -1240,12 +1297,42 @@ class EVScan1D(EVScan):
         highlight_groups: str | list[str] | None = None,
         highlight_important_groups: int | None = None,
         plot_minimum: bool = True, 
-        legend: Literal["true", "false", "last"] = "last",
+        legend: bool | Literal["last","first"] = "last",
         kwargs_chi2_total: dict[str, Any] | None = None,
         kwargs_chi2_minimum: dict[str, Any] | None = None,
         kwargs_chi2_groups: dict[str, Any] | list[dict[str, Any] | None] | None = None,
         **kwargs: Any,
     ) -> None:
+        """Plot the eigenvector scan(s)
+
+        Parameters
+        ----------
+        ax : plt.Axes or sequence of plt.Axes
+            Axes to plot on. If a sequence is given, its length must match the number of eigenvectors to plot.
+        eigenvector :
+            Eigenvector index or list of indices to plot. If `None`, all scanned eigenvectors are plotted.
+        datasets : Datasets, optional
+            Datasets object containing the dataset metadata. Required if `data_groupby` is not `None`.
+        data_groupby : str, optional
+            Column name in `datasets.index` to group datasets by. If `None`, no grouping is applied.
+        groups_labels : dict, optional
+            Mapping of group names (as in `data_groupby`) to labels to use in the legend. If `None`, the group names are used as labels.
+        highlight_groups : str or list of str, optional
+            Group name or list of group names (as in `data_groupby`) to highlight in the plot. Highlighted groups are drawn with thicker lines and higher opacity. 
+            If `None`, no groups are highlighted.
+        highlight_important_groups : int, optional
+            Number of most important groups (by maximum chi2 contribution) to highlight in the plot. If `None`, no groups are highlighted.
+        plot_minimum : bool, default True
+            Whether to mark the minimum chi2 point on the plot.
+        legend : bool or 'last' or 'first', default 'last'
+            Whether to show a legend. If 'last', the legend is shown only on the last subplot. If 'first', the legend is shown only on the first subplot.
+        kwargs_chi2_total : dict, optional
+            Additional keyword arguments passed to `ax.plot` when plotting the total chi2 curve.
+        kwargs_chi2_minimum : dict, optional
+            Additional keyword arguments passed to when plotting the minimum chi2
+        kwargs_chi2_groups : dict or list of dict, optional
+            Additional keyword arguments passed to `ax.plot` when plotting the grouped chi2 curves. If a list is given, its length must match the number of groups. If a dict is given, the same arguments are used for all groups.
+        """
 
         if data_groupby is not None:
             if self.profile_chi2_per_data is None:
@@ -1282,7 +1369,7 @@ class EVScan1D(EVScan):
             profile_chi2_groups = None
             data_groups_labels = None
 
-        minimum = self.minimum_chi2
+        minimum_chi2 = self.minimum_chi2
 
         if data_groups_labels is not None and groups_labels is not None:
             data_groups_labels = data_groups_labels | groups_labels
@@ -1293,7 +1380,7 @@ class EVScan1D(EVScan):
             profile_chi2=self.profile_chi2,
             eigenvector=eigenvector,
             modus="EV",
-            minimum=minimum,
+            minimum=minimum_chi2,
             plot_minimum= plot_minimum, 
             profile_chi2_groups=profile_chi2_groups,
             groups_labels=data_groups_labels,
@@ -1482,9 +1569,37 @@ class EVScan2D(EVScan):
         tolerance: float | None = None,
         **kwargs: Any,
     ) -> None:
+        """
+        Plot the 2D eigenvector scan.
 
+        Parameters
+        ----------
+        ax : plt.Axes or Sequence[plt.Axes]
+            Axes to plot on.
+        eigenvectors : tuple[int, int] or list[tuple[int, int]], optional
+            Eigenvectors to plot, by default None (all).
+        draw_contour : bool, optional
+            Whether to draw contour lines, by default True.
+            If True and levels!=None: contours at levels. 
+            If True and levels==None: Contours at tolerance/2, tolerance and 2*tolerance. 
+            If tolerance==None contour at vmax/2
+        plot_minimum : bool, optional
+            Whether to plot the minimum point, by default True.
+        levels : list, optional
+            Contour levels, by default None (uses tolerance or vmax).
+        cbar_scale : Literal["linear", "log"], optional
+            Colorbar scale, by default "linear".
+        vmax : float, optional
+            Maximum value for colorbar, by default 1000.
+        colormap : str, optional
+            Colormap to use, by default "Spectral_r".
+        tolerance : float, optional
+            Tolerance for chi2 contour, if no levels are chosen, by default None (uses target_delta_chi2).
+            if cbar_scale=="linear": tolerance is the center of the color spectrum, e.g. the brightest color.
+            if cbar_scale=="log", choice of tolerance has no influence on colors
+        """
         self._load_profile()
-        minimum = self.minimum_chi2
+        minimum_chi2 = self.minimum_chi2
 
         plot_scan_2d(
             ax=ax,
@@ -1492,7 +1607,7 @@ class EVScan2D(EVScan):
             profile_chi2=self.profile_chi2,
             eigenvectors=eigenvectors,
             modus="EV",
-            minimum=minimum,
+            minimum=minimum_chi2,
             tolerance=tolerance,
             draw_contour=draw_contour,
             levels=levels,
