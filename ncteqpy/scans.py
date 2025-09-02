@@ -9,6 +9,7 @@ import pandas as pd
 
 import ncteqpy.jaml as jaml
 from ncteqpy.data import Datasets
+from ncteqpy.data_groupby import DatasetsGroupBy
 from ncteqpy.plot.scan import plot_scan_1d, plot_scan_2d
 
 
@@ -476,7 +477,7 @@ class ParameterScan1D(ParameterScan):
         self,
         ax: plt.Axes | Sequence[plt.Axes],
         parameter: str | Sequence[str] | None = None,
-        datasets: Datasets | None = None,
+        datasets: Datasets | DatasetsGroupBy | None = None,
         data_groupby: str | None = None,
         groups_labels: dict[str, str] | None = None,
         highlight_groups: str | list[str] | None = None,
@@ -528,12 +529,18 @@ class ParameterScan1D(ParameterScan):
 
             # construct dataset grouper as pd.Series with index "id_dataset" and values `data_groupby`
             # TODO: Better treatment of datasets with the same ID but different values for `data_groupby`
-            grouper = (
-                datasets.index[["id_dataset", data_groupby]]
-                .drop_duplicates()
-                .set_index("id_dataset")[data_groupby]
-            )
-
+            if isinstance(datasets, Datasets):
+                grouper = (
+                    datasets.index[["id_dataset", data_groupby]]
+                    .drop_duplicates()
+                    .set_index("id_dataset")[data_groupby]
+                )
+            if isinstance(datasets, DatasetsGroupBy):
+                grouper = (
+                    datasets.datasets_index[["id_dataset", data_groupby]]
+                    .drop_duplicates()
+                    .set_index("id_dataset")[data_groupby]
+                )
             # group profile_chi2_per_data by the grouper and sum the chi2 values of the groups
             profile_chi2_groups = (
                 self.profile_chi2_per_data.T.groupby(lambda x: (x[0], grouper[x[1]]))
@@ -543,11 +550,14 @@ class ParameterScan1D(ParameterScan):
             profile_chi2_groups.columns = pd.MultiIndex.from_tuples(
                 profile_chi2_groups.columns, names=["parameters", data_groupby]
             )
-
-            data_groups_labels = dict(
-                zip(datasets.index[data_groupby], datasets.index[data_groupby].map(str))
-            )
-
+            if isinstance(datasets, Datasets):
+                data_groups_labels = dict(
+                    zip(datasets.index[data_groupby], datasets.index[data_groupby].map(str))
+                )
+            if isinstance(datasets, DatasetsGroupBy):
+                data_groups_labels = dict(
+                    zip(datasets.datasets_index[data_groupby], datasets.datasets_index[data_groupby].map(str))
+                )
         else:
             profile_chi2_groups = None
             data_groups_labels = None
@@ -1291,7 +1301,7 @@ class EVScan1D(EVScan):
         self,
         ax: plt.Axes | Sequence[plt.Axes],
         eigenvector: int | Sequence[int] | None = None,
-        datasets: Datasets | None = None,
+        datasets: Datasets | DatasetsGroupBy | None = None,
         data_groupby: str | None = None,
         groups_labels: dict[str, str] | None = None,
         highlight_groups: str | list[str] | None = None,
@@ -1345,11 +1355,18 @@ class EVScan1D(EVScan):
 
             # construct dataset grouper as pd.Series with index "id_dataset" and values `data_groupby`
             # TODO: Better treatment of datasets with the same ID but different values for `data_groupby`
-            grouper = (
-                datasets.index[["id_dataset", data_groupby]]
-                .drop_duplicates()
-                .set_index("id_dataset")[data_groupby]
-            )
+            if isinstance(datasets, Datasets):
+                grouper = (
+                    datasets.index[["id_dataset", data_groupby]]
+                    .drop_duplicates()
+                    .set_index("id_dataset")[data_groupby]
+                )
+            if isinstance(datasets, DatasetsGroupBy):
+                grouper = (
+                    datasets.datasets_index[["id_dataset", data_groupby]]
+                    .drop_duplicates()
+                    .set_index("id_dataset")[data_groupby]
+                )
 
             # group profile_chi2_per_data by the grouper and sum the chi2 values of the groups
             profile_chi2_groups = (
@@ -1361,9 +1378,14 @@ class EVScan1D(EVScan):
                 profile_chi2_groups.columns, names=["eigenvector", data_groupby]
             )
 
-            data_groups_labels = dict(
-                zip(datasets.index[data_groupby], datasets.index[data_groupby].map(str))
-            )
+            if isinstance(datasets, Datasets):
+                data_groups_labels = dict(
+                    zip(datasets.index[data_groupby], datasets.index[data_groupby].map(str))
+                )
+            if isinstance(datasets, DatasetsGroupBy):
+                data_groups_labels = dict(
+                    zip(datasets.datasets_index[data_groupby], datasets.datasets_index[data_groupby].map(str))
+                )
 
         else:
             profile_chi2_groups = None
