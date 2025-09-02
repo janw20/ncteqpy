@@ -2,17 +2,31 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Literal, Sequence, cast
+from typing_extensions import Any, Hashable, Literal, Sequence, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
+import sympy as sp
 import yaml
-import yaml.parser
 
+from ncteqpy._typing import SequenceNotStr
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
-from ncteqpy.cuts import Cut, Cuts
+from ncteqpy.cuts import Cuts, cut_accepts
+from ncteqpy.data_groupby import DatasetsGroupBy
+from ncteqpy.kinematic_variables import (
+    Q2_disdimu,
+    Q2_hq_pT_bin,
+    Q2_sih,
+    W2_dis,
+    W2_disdimu,
+    x_hq_bin,
+    x_sih,
+    x_wzprod_bin,
+)
+from ncteqpy.plot.kinematic_coverage import plot_kinematic_coverage
 from ncteqpy.settings import Settings
 
 
@@ -216,6 +230,51 @@ class Datasets(jaml.YAMLWrapper):
 
         return dataset
 
+    def groupby(
+        self,
+        by: str | list[str],
+        grouper: pd.Series[Any] | None = None,
+        sort: Literal["ascending", "descending"] | None = None,
+        order: SequenceNotStr[Hashable] | None = None,
+        labels: dict[Hashable, str] | None = None,
+        label_format: str | None = None,
+        props: dict[Hashable, dict[str, Any]] | None = None,
+    ) -> DatasetsGroupBy:
+        """Groups the data sets by one or more variables.
+
+        Parameters
+        ----------
+        by : str | list[str]
+            Key(s) to group the data sets by, must be column labels of `Datasets.index`, e.g., `"type_experiment"` or `["A_heavier", "Z_heavier"]`.
+        grouper : pd.Series | None, optional
+            `Series` mapping some or all dataset IDs to group values. This takes precedence over the values in `Datasets.index`.
+        sort : Literal["ascending", "descending"] | None, optional
+            If the group values should be sorted in ascending or descending order, by default no sorting.
+        order : SequenceNotStr[Hashable] | None, optional
+            Custom ordering of the group values, by default None. If `by` is a list, this must be a list of tuples.
+        labels : dict[Hashable, str] | None, optional
+            Manual relabeling of some or all group values, by default None. Must be given as a map from the group values to the new labels and takes precedence over `label_format`.
+        label_format : str | None, optional
+            Format string applied to all group values, by default None. Fields in the format string must be labeled by column names in `Datasets.index`, or by `A1_sym`, `A2_sym`, `A_lighter_sym`, `A_heavier_sym`, which formats the element symbol of the respective nucleus.
+        props : dict[Hashable, dict[str, Any]] | None, optional
+            Matplotlib properties for some or all group values, by default None. Must be given as a map from the group values to a dictionary with matplotlib properties, e.g., the latter could be `{"color": "red"}`. If `props` is None, the property cycle in `matplotlib.rcParams["axes.prop_cycle"]` is used.
+
+        Returns
+        -------
+        DatasetsGroupBy
+            The grouped data sets.
+        """
+        return DatasetsGroupBy(
+            datasets_index=self.index,
+            by=by,
+            grouper=grouper,
+            sort=sort,
+            order=order,
+            labels=labels,
+            label_format=label_format,
+            props=props,
+        )
+
     def _load_points(self, verbose: bool | int = False, settings: None = None) -> None:
         points_list = []
 
@@ -230,6 +289,7 @@ class Datasets(jaml.YAMLWrapper):
                 },
                 "GridSpec": {
                     "NumberOfCorrSysErr": None,
+                    "TypeTheory": None,
                     "TypeColumns": None,
                     "Grid": None,
                 },
@@ -294,10 +354,16 @@ class Datasets(jaml.YAMLWrapper):
                 e.add_note(f"Unknown field {e.args[0]} in the data file {p}")
                 raise e
 
+            observable = cast(str, jaml.nested_get(data, ["GridSpec", "TypeTheory"]))
+
             points_list.extend(
                 {
                     **info,
                     **dict(zip(grid_row_labels, grid_row)),
+                    # add data column that holds the actual observable
+                    "data": grid_row[
+                        grid_row_labels.index(labels.data_yaml_to_py[observable])
+                    ],
                 }
                 for grid_row in cast(
                     list[list[float]], jaml.nested_get(data, ["GridSpec", "Grid"])
@@ -305,7 +371,14 @@ class Datasets(jaml.YAMLWrapper):
             )
 
         self._points = pd.DataFrame.from_records(
-            data=points_list, columns=[*info.keys(), *labels.data_yaml_to_py.values()]
+            data=points_list,
+            columns=[
+                *info.keys(),
+                *labels.kinvars_yaml_to_py.values(),
+                *labels.theory_yaml_to_py.values(),
+                "data",
+                *labels.uncertainties_yaml_to_py.values(),
+            ],
         )
 
         int_cols = [
@@ -337,120 +410,350 @@ class Datasets(jaml.YAMLWrapper):
             self._points["type_experiment"].isin(["DIS", "DISNEU"])
             & self._points["W2"].isna()
         )
-        self._points.loc[mask_dis, "W2"] = (
-            self._points.loc[mask_dis, "Q2"]
-            * (1.0 / self._points.loc[mask_dis, "x"] - 1.0)
-            + m_proton**2
+        self._points.loc[mask_dis, "W2"] = sp.lambdify(
+            tuple(W2_dis.free_symbols), W2_dis
+        )(**self._points.loc[mask_dis, ["Q2", "x"]])
+
+        # calculate Q2 and W2 for DISDIMU
+        mask_disdimu = self._points["type_experiment"] == "DISDIMU"
+        mask_disdimu_w2 = mask_disdimu & self._points["W2"].isna()
+        mask_disdimu_q2 = mask_disdimu & self._points["Q2"].isna()
+
+        self._points.loc[mask_disdimu_w2, "W2"] = sp.lambdify(
+            tuple(W2_disdimu.free_symbols), W2_disdimu
+        )(
+            **self._points.loc[mask_disdimu_w2, ["x", "y", "E_had"]],
+        )
+        self._points.loc[mask_disdimu_q2, "Q2"] = sp.lambdify(
+            tuple(Q2_disdimu.free_symbols), Q2_disdimu
+        )(
+            **self._points.loc[mask_disdimu_q2, ["x", "y", "E_had"]],
         )
 
-        mask_disdimu = (self._points["type_experiment"] == "DISDIMU") & self._points[
-            "W2"
-        ].isna()
-        self._points.loc[mask_disdimu, "W2"] = (
-            m_proton**2
-            * 2.0
-            * m_proton
-            * (1.0 - self._points.loc[mask_disdimu, "x"])
-            * self._points.loc[mask_disdimu, "y"]
-            * self._points.loc[mask_disdimu, "E_had"]
+        # calculate x and Q2 for WZPROD
+        mask_wzprod = self._points["type_experiment"] == "WZPROD"
+        mask_wzprod_Q2 = mask_wzprod & self._points["Q2"].isna()
+        mask_wzprod_x = mask_wzprod & self._points["x"].isna()
+
+        m2_W = 80.4**2
+        m2_Z = 91.2**2
+        self._points.loc[mask_wzprod_Q2, "Q2"] = self._points.loc[
+            mask_wzprod_Q2, "final_state"
+        ].map(
+            {
+                "WPLUS": m2_W,
+                "WMINUS": m2_W,
+                "Z": m2_Z,
+            }
+        )
+        self._points.loc[mask_wzprod_x, "x"] = sp.lambdify(
+            tuple(x_wzprod_bin.free_symbols), x_wzprod_bin
+        )(**self._points.loc[mask_wzprod_x, ["Q2", "sqrt_s", "eta_min", "eta_max"]])
+
+        # calculate x and Q2 for SIH
+        mask_sih = self._points["type_experiment"] == "SIH"
+        mask_sih_Q2 = mask_sih & self._points["Q2"].isna()
+        mask_sih_x = mask_sih & self._points["x"].isna()
+
+        self._points.loc[mask_sih_Q2, "Q2"] = sp.lambdify(
+            tuple(Q2_sih.free_symbols), Q2_sih
+        )(pT=self._points.loc[mask_sih_Q2, "pT"])
+        self._points.loc[mask_sih_x, "x"] = sp.lambdify(
+            tuple(x_sih.free_symbols), x_sih
+        )(**self._points.loc[mask_sih_x, ["Q2", "sqrt_s", "y"]])
+
+        # calculate x and Q2 for HQ, OPENHEAVY and QUARKONIUM
+        for type_exp in "HQ", "OPENHEAVY", "QUARKONIUM":
+            mask_hq = self._points["type_experiment"] == type_exp
+            mask_hq_Q2 = mask_hq & self._points["Q2"].isna()
+            mask_hq_x = mask_hq & self._points["x"].isna()
+
+            mask_hq_x_diff = mask_hq_x & self._points["sigma"].notna()
+            # TODO: figure out how to treat sigma_pT_integrated
+            mask_hq_x_int = mask_hq_x & self._points["sigma_pT_integrated"].notna()
+
+            self._points.loc[mask_hq_Q2, "Q2"] = sp.lambdify(
+                tuple(Q2_hq_pT_bin.free_symbols), Q2_hq_pT_bin
+            )(**self._points.loc[mask_hq_Q2, ["pT_min", "pT_max"]])
+            self._points.loc[mask_hq_x_diff, "x"] = sp.lambdify(
+                tuple(x_hq_bin.free_symbols), x_hq_bin
+            )(**self._points.loc[mask_hq_x_diff, ["Q2", "sqrt_s", "y_min", "y_max"]])
+
+        # assert self._points[["x", "Q2"]].notna().all().all()
+
+        self._points["unc_tot"] = (
+            self._points[["unc_stat", "unc_sys_uncorr"]] ** 2
+        ).sum(
+            axis=1, skipna=True
+        ) ** 0.5  # FIXME: include unc_sys_corr
+
+        # add A_lighter, Z_lighter, A_heavier, Z_heavier columns (lighter and heavier nucleus out of the 2, ignoring nan)
+        i = cast(int, self._points.columns.get_loc("Z2"))
+
+        idx_lighter, _ = pd.factorize(
+            self._points[["A1", "A2"]].idxmin(axis=1), sort=True
+        )
+        self._points.insert(
+            i + 1,
+            "A_lighter",
+            self._points[["A1", "A2"]].to_numpy()[
+                np.arange(len(self._points)), idx_lighter
+            ],
+        )
+        self._points.insert(
+            i + 2,
+            "Z_lighter",
+            self._points[["Z1", "Z2"]].to_numpy()[
+                np.arange(len(self._points)), idx_lighter
+            ],
         )
 
+        idx_heavier, _ = pd.factorize(
+            self._points[["A1", "A2"]].idxmax(axis=1), sort=True
+        )
+        self._points.insert(
+            i + 3,
+            "A_heavier",
+            self._points[["A1", "A2"]].to_numpy()[
+                np.arange(len(self._points)), idx_heavier
+            ],
+        )
+        self._points.insert(
+            i + 4,
+            "Z_heavier",
+            self._points[["Z1", "Z2"]].to_numpy()[
+                np.arange(len(self._points)), idx_heavier
+            ],
+        )
+
+        # to group by A, these cannot be nan, because GroupBy.get_group does not find keys that include nan. so we fill with np.inf
+        self._points.loc[:, ["A1", "Z1", "A2", "Z2"]] = self._points.loc[
+            :, ["A1", "Z1", "A2", "Z2"]
+        ].fillna(value=np.inf)
+
+        # apply cuts
         if self.cuts is not None:
             self.apply(self.cuts)
 
     def _load_dataset_index(
         self, verbose: bool | int = False, settings: None = None
     ) -> None:
-        pickle_name = "dataset_index"
+        index_list = []
 
-        self._index = cast(pd.DataFrame, self._unpickle(pickle_name))
+        index_pattern = jaml.Pattern(
+            {
+                "Description": {
+                    "TypeExp": None,
+                    "FinalState": None,
+                    "IDDataSet": None,
+                    "AZValues1": None,
+                    "AZValues2": None,
+                },
+                "GridSpec": {
+                    "NumberOfCorrSysErr": None,
+                    "TypeTheory": None,
+                    "TypeUncertainties": None,
+                    "TypeKinVar": None,
+                    "Dim": None,
+                    # "Grid": None,
+                },
+            }
+        )
+        index_yaml = self._load_yaml(index_pattern)
 
-        if self._index is None:
-            index_list = []
+        assert isinstance(index_yaml, list)
 
-            index_pattern = jaml.Pattern(
+        for p, data in cast(list[tuple[Path, jaml.YAMLType]], index_yaml):
+            if not jaml.nested_in(data, ["Description", "IDDataSet"]):
+                continue
+
+            # we have to deal with A and Z first because we can't index None
+            az1 = (
+                az
+                if isinstance(
+                    az := jaml.nested_get(data, ["Description", "AZValues1"]), list
+                )
+                else (None, None)
+            )
+            az2 = (
+                az
+                if isinstance(
+                    az := jaml.nested_get(data, ["Description", "AZValues2"]), list
+                )
+                else (None, None)
+            )
+            # if a field is not in the data file we set it to None in the dataframe
+            index_list.append(
                 {
-                    "Description": {
-                        "TypeExp": None,
-                        "FinalState": None,
-                        "IDDataSet": None,
-                        "AZValues1": None,
-                        "AZValues2": None,
-                    },
-                    "GridSpec": {
-                        "NumberOfCorrSysErr": None,
-                        "TypeTheory": None,
-                        "TypeUncertainties": None,
-                        "TypeKinVar": None,
-                        "Dim": None,
-                        # "Grid": None,
-                    },
+                    "id_dataset": jaml.nested_get(data, ["Description", "IDDataSet"]),
+                    "path": p,
+                    "type_experiment": jaml.nested_get(
+                        data, ["Description", "TypeExp"]
+                    ),
+                    "A1": az1[0],
+                    "Z1": az1[1],
+                    "A2": az2[0],
+                    "Z2": az2[1],
+                    "final_state": jaml.nested_get(data, ["Description", "FinalState"]),
+                    "correlated_systematic_uncertainties": jaml.nested_get(
+                        data, ["GridSpec", "NumberOfCorrSysErr"]
+                    ),
+                    "kinematic_variables": [
+                        labels.kinvars_yaml_to_py[k]
+                        for k in cast(
+                            list[str], jaml.nested_get(data, ["GridSpec", "TypeKinVar"])
+                        )
+                    ],
+                    "type_theory": labels.theory_yaml_to_py[
+                        cast(str, jaml.nested_get(data, ["GridSpec", "TypeTheory"]))
+                    ],
+                    "types_uncertainties": [
+                        labels.uncertainties_yaml_to_py[k]
+                        for k in cast(
+                            list[str],
+                            jaml.nested_get(data, ["GridSpec", "TypeUncertainties"]),
+                        )
+                    ],
+                    "num_points": jaml.nested_get(data, ["GridSpec", "Dim", 0]),
+                    # "grid": np.array(jaml.nested_get(data, ["GridSpec", "Grid"])),
                 }
             )
-            index_yaml = self._load_yaml(index_pattern)
+        self._index = pd.DataFrame.from_records(data=index_list)
+        int_cols = [
+            "id_dataset",
+            "correlated_systematic_uncertainties",
+        ]  # no A and Z here since they are sometimes non-integer
+        self._index[int_cols] = self._index[int_cols].astype("Int64", copy=False)
+        self._index.sort_values(by="path", inplace=True)
 
-            assert isinstance(index_yaml, list)
+        # add A_lighter, Z_lighter, A_heavier, Z_heavier columns (lighter and heavier nucleus out of the 2, ignoring nan)
+        i = cast(int, self._index.columns.get_loc("Z2"))
 
-            for p, data in cast(list[tuple[Path, jaml.YAMLType]], index_yaml):
-                if not jaml.nested_in(data, ["Description", "IDDataSet"]):
-                    continue
+        idx_lighter, _ = pd.factorize(
+            self._index[["A1", "A2"]].idxmin(axis=1), sort=True
+        )
+        self._index.insert(
+            i + 1,
+            "A_lighter",
+            self._index[["A1", "A2"]].to_numpy()[
+                np.arange(len(self._index)), idx_lighter
+            ],
+        )
+        self._index.insert(
+            i + 2,
+            "Z_lighter",
+            self._index[["Z1", "Z2"]].to_numpy()[
+                np.arange(len(self._index)), idx_lighter
+            ],
+        )
 
-                # we have to deal with A and Z first because we can't index None
-                az1 = (
-                    az
-                    if isinstance(
-                        az := jaml.nested_get(data, ["Description", "AZValues1"]), list
-                    )
-                    else (None, None)
-                )
-                az2 = (
-                    az
-                    if isinstance(
-                        az := jaml.nested_get(data, ["Description", "AZValues2"]), list
-                    )
-                    else (None, None)
-                )
-                # if a field is not in the data file we set it to None in the dataframe
-                index_list.append(
-                    {
-                        "id_dataset": jaml.nested_get(
-                            data, ["Description", "IDDataSet"]
-                        ),
-                        "path": p,
-                        "type_experiment": jaml.nested_get(
-                            data, ["Description", "TypeExp"]
-                        ),
-                        "A1": az1[0],
-                        "Z1": az1[1],
-                        "A2": az2[0],
-                        "Z2": az2[1],
-                        "final_state": jaml.nested_get(
-                            data, ["Description", "FinalState"]
-                        ),
-                        "correlated_systematic_uncertainties": jaml.nested_get(
-                            data, ["GridSpec", "NumberOfCorrSysErr"]
-                        ),
-                        "kinematic_variables": jaml.nested_get(
-                            data, ["GridSpec", "TypeKinVar"]
-                        ),
-                        "type_theory": jaml.nested_get(
-                            data, ["GridSpec", "TypeTheory"]
-                        ),
-                        "types_uncertainties": jaml.nested_get(
-                            data, ["GridSpec", "TypeUncertainties"]
-                        ),
-                        "num_points": jaml.nested_get(data, ["GridSpec", "Dim", 0]),
-                        # "grid": np.array(jaml.nested_get(data, ["GridSpec", "Grid"])),
-                    }
-                )
-            self._index = pd.DataFrame.from_records(data=index_list)
-            int_cols = [
-                "id_dataset",
-                "correlated_systematic_uncertainties",
-            ]  # no A and Z here since they are sometimes non-integer
-            self._index[int_cols] = self._index[int_cols].astype("Int64", copy=False)
-            self._index.sort_values(by="path", inplace=True)
-            self._pickle(self._index, pickle_name)
+        idx_heavier, _ = pd.factorize(
+            self._index[["A1", "A2"]].idxmax(axis=1), sort=True
+        )
+        self._index.insert(
+            i + 3,
+            "A_heavier",
+            self._index[["A1", "A2"]].to_numpy()[
+                np.arange(len(self._index)), idx_heavier
+            ],
+        )
+        self._index.insert(
+            i + 4,
+            "Z_heavier",
+            self._index[["Z1", "Z2"]].to_numpy()[
+                np.arange(len(self._index)), idx_heavier
+            ],
+        )
+
+        # to group by A, these cannot be nan, because GroupBy.get_group does not find keys that include nan. so we fill with np.inf
+        self._index.loc[:, ["A1", "Z1", "A2", "Z2"]] = self._index.loc[
+            :, ["A1", "Z1", "A2", "Z2"]
+        ].fillna(value=np.inf)
+
+    def plot_kinematic_coverage(
+        self,
+        ax: plt.Axes,
+        kinematic_variables: tuple[str, str] = ("x", "Q2"),
+        filter_query: str | None = None,
+        groupby: DatasetsGroupBy | None = None,
+        show_cut_points: Literal["before", "after", "both"] = "both",
+        cuts: (
+            list[tuple[float | sp.Rel | sp.Expr, npt.NDArray[np.floating]]] | None
+        ) = None,
+        cuts_labels: list[tuple[float, str] | None] | None = None,
+        cuts_labels_offset: float | list[float | None] | None = None,
+        kwargs_points: dict[str, Any] | list[dict[str, Any] | None] | None = None,
+        kwargs_points_before_cuts: (
+            dict[str, Any] | list[dict[str, Any] | None] | None
+        ) = None,
+        kwargs_cuts: dict[str, Any] | list[dict[str, Any] | None] | None = None,
+        kwargs_cuts_labels: dict[str, Any] | list[dict[str, Any] | None] | None = None,
+    ) -> None:
+        """Plots the data points in the plane of 2 kinematic variables (by default x and Q²).
+
+        Parameters
+        ----------
+        ax : plt.Axes
+            The axes to plot on.
+        kinematic_variables : tuple[str, str], optional
+            Kinematic variables to display on the x and y axis, by default ("x", "Q2"). Must be in the columns of `points` and `points_before_cuts`.
+        groupby : DatasetsGroupby | None, optional
+            How to group the points, by default no grouping.
+        show_cut_points : Literal["before", "after", "both"], optional.
+            If the points before or after cuts should be shown, by default both.
+        cuts : list[tuple[float | sp.Rel | sp.Expr, npt.NDArray[np.floating]]] | None, optional
+            Cuts to display as curves, by default None. A cut is given as a tuple with first element a float (for a constant cut on the y axis) or a sympy expression that has at most one free variable which represents the x axis values, and second element a numpy array that gives the x axis values of the curve. For example, to display a W² cut on the (x, Q²) plane, pass
+            ```
+                cuts=[(nc.Q2_dis.subs({nc.W2: 1.7**2}), np.logspace(-0.7, -1e-3, 200))]
+            ```
+            (where `ncteqpy` is imported as `nc` and `numpy` is imported as `np`).
+        cuts_labels : list[tuple[float, str]  |  None] | None, optional
+            Labels to annotate the cuts by, by default None. These must be in the same ordering as `cuts`.
+        cuts_labels_offset : float | list[float  |  None] | None, optional
+            Offset in units of font size to shift the label orthogonally away from the curve representing a cut, by default None. Must be in the same order as `cuts` and `cuts_labels`.
+        kwargs_points : dict[str, Any] | list[dict[str, Any] | None] | None, optional
+            Keyword arguments to adjust plotting the points, passed to `ax.plot`, by default None.
+        kwargs_points_before_cuts : dict[str, Any] | list[dict[str, Any] | None] | None, optional
+            Keyword arguments to adjust plotting the points before cuts, passed to `ax.plot`, by default None.
+        kwargs_cuts : dict[str, Any] | list[dict[str, Any] | None] | None, optional
+            Keyword arguments to adjust plotting the cuts, passed to `ax.plot`, by default None. If a `list` is passed, it must be in the same order as `cuts`.
+        kwargs_cuts_labels : dict[str, Any] | list[dict[str, Any] | None] | None, optional
+            Keyword arguments to adjust plotting the labels of the cuts, passed to `ax.annotate`, by default None. If a `list` is passed, it must be in the same order as `cuts_labels`.
+        """
+
+        filtered_points = (
+            self.points.query(filter_query) if filter_query is not None else self.points
+        )
+        filtered_points_after_cuts = (
+            self.points_after_cuts.query(filter_query)
+            if filter_query is not None
+            else self.points_after_cuts
+        )
+
+        if show_cut_points == "before":
+            points = filtered_points
+            points_before_cuts = None
+        elif show_cut_points == "after":
+            points = filtered_points_after_cuts
+            points_before_cuts = None
+        else:
+            points = filtered_points_after_cuts
+            points_before_cuts = filtered_points
+
+        plot_kinematic_coverage(
+            ax=ax,
+            points=points,
+            points_before_cuts=points_before_cuts,
+            kinematic_variables=kinematic_variables,
+            groupby=groupby,
+            cuts=cuts,
+            cuts_labels=cuts_labels,
+            cuts_labels_offset=cuts_labels_offset,
+            kwargs_points=kwargs_points,
+            kwargs_points_before_cuts=kwargs_points_before_cuts,
+            kwargs_cuts=kwargs_cuts,
+            kwargs_cuts_labels=kwargs_cuts_labels,
+        )
 
 
 class Dataset:
@@ -468,7 +771,7 @@ class Dataset:
     _kinematic_variables: list[str] | None = None
     # TODO add rest of fields
 
-    _cut: Cut | None = None
+    _cut: sp.Rel | None = None
 
     _plotting_short_info: str | None = None
     _plotting_reference_id: str | None = None
@@ -478,7 +781,7 @@ class Dataset:
     _plotting_label_theory: str | None = None
     _plotting_unit_theory: str | None = None
 
-    def __init__(self, path: str | os.PathLike, cut: Cut | None = None) -> None:
+    def __init__(self, path: str | os.PathLike, cut: sp.Rel | None = None) -> None:
         path = Path(path)
         self._path = path
 
@@ -507,8 +810,6 @@ class Dataset:
                 )
             ),
         )
-        if self.cut is not None:
-            self._points = self._points[self.cut.accepts(self._points)]
 
         if "pT_min" in self.points.columns and "pT_max" in self.points.columns:
             i = self.points.columns.get_loc("pT_max")
@@ -574,7 +875,7 @@ class Dataset:
                 )
 
         if self.cut is not None:
-            self._points = self._points[self.cut.accepts(self._points)]
+            self._points = self._points[cut_accepts(self.cut, self._points)]
 
         if not "unc_tot" in self._points.columns:
             errs = list(set(self.points.columns) & set(["unc_stat", "unc_sys"]))
@@ -761,12 +1062,8 @@ class Dataset:
 
         return self._plotting_unit_theory
 
-    def apply(self, cuts: Cut | Sequence[Cut]) -> None:
-        if isinstance(cuts, Cut):
-            cuts = [cuts]
-
-        for cut in cuts:
-            self._points = self._points[cut.accepts(self._points)]
+    def apply(self, cut: sp.Rel) -> None:
+        self._points = self._points[cut_accepts(cut, self._points)]
 
     def plot(
         self,

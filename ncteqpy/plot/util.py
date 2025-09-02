@@ -1,20 +1,19 @@
 from __future__ import annotations
 
 import time
-from math import ceil
-from typing import Any, Iterable, cast
 
-import matplotlib.pyplot as plt
-import numpy as np
-import numpy.typing as npt
 from matplotlib import _api
-from matplotlib.axes import Axes
-from matplotlib.figure import Figure
 from matplotlib.legend import Legend
 from matplotlib.transforms import Bbox
 
 
 class AdditionalLegend(Legend):
+
+    order: int
+
+    def __init__(self, order: int, *args, **kwargs) -> None:
+        self.order = order
+        super().__init__(*args, **kwargs)
 
     def _find_best_position(self, width, height, renderer):
         """Determine the best location to place the legend."""
@@ -22,17 +21,30 @@ class AdditionalLegend(Legend):
 
         start_time = time.perf_counter()
 
-        bboxes, lines, offsets = self._auto_legend_data()
+        bboxes, lines, offsets = self._auto_legend_data(renderer)
 
         bbox = Bbox.from_bounds(0, 0, width, height)
 
         # get all legends added before this one
         legends = [
-            l for l in self.axes.get_children() if isinstance(l, Legend)
+            l for l in self.axes.get_children() if isinstance(l, AdditionalLegend)
         ]  # TODO: make this work with figure
-        index_self = legends.index(self)
-        legends = legends[:index_self]
 
+        # print([l.texts[0] for l in legends])
+        # print([legend is self for legend in legends])
+
+        # sort legends by size to place larger legends first
+        legends = sorted(legends, key=lambda l: l.order)
+
+        i_self = legends.index(self)
+
+        # print("test")
+
+        all_legends = legends[:i_self]
+        if l := self.axes.get_legend():
+            all_legends.insert(0, l)
+
+        # for i, legend in enumerate(all_legends):
         candidates = []
         for idx in range(1, len(self.codes)):
             l, b = self._get_anchored_bbox(
@@ -41,7 +53,9 @@ class AdditionalLegend(Legend):
             legendBox = Bbox.from_bounds(l, b, width, height)
             # XXX TODO: If markers are present, it would be good to take them
             # into account when checking vertex overlaps in the next line.
-            if any(legendBox.overlaps(l.get_window_extent()) for l in legends):
+
+            # infinite badness if this legend overlaps a larger one
+            if any(legendBox.overlaps(l.get_window_extent()) for l in all_legends):
                 badness = float("inf")
             else:
                 badness = (
@@ -57,7 +71,13 @@ class AdditionalLegend(Legend):
             if badness == 0:
                 break
 
-        _, _, (l, b) = min(candidates)
+            _, _, (l, b) = min(candidates)
+
+            # if i != len(legends) - 1:
+            #     legend.set_loc = (l, b)
+
+        else:
+            l, b = self._get_anchored_bbox(1, bbox, self.get_bbox_to_anchor(), renderer)
 
         if self._loc_used_default and time.perf_counter() - start_time > 1:
             _api.warn_external(

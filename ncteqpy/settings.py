@@ -5,16 +5,10 @@ import re
 from pathlib import Path
 from typing import Iterable, TypedDict, cast
 
+import sympy as sp
+
 import ncteqpy.jaml as jaml
-from ncteqpy.cuts import (
-    Cut,
-    Cut_GreaterThan,
-    Cut_GreaterThanEqual,
-    Cut_LessThan,
-    Cut_LessThanEqual,
-    Cut_RelOp,
-    Cuts,
-)
+from ncteqpy.cuts import Cuts
 from ncteqpy.jaml import YAMLType
 from ncteqpy.kinematic_variables import label_to_kinvar
 from ncteqpy.labels import kinvars_yaml_to_py
@@ -248,11 +242,11 @@ class Settings(jaml.YAMLWrapper):
 
             assert isinstance(yaml, dict)
 
-            yaml_to_cut: dict[str, type[Cut_RelOp]] = {
-                "MINCUT": Cut_GreaterThan,
-                "MAXCUT": Cut_LessThan,
-                "MINCUTEQ": Cut_GreaterThanEqual,
-                "MAXCUTEQ": Cut_LessThan,  # bug in ncteqpp-2.0
+            yaml_to_cut: dict[str, type[sp.Rel]] = {
+                "MINCUT": sp.StrictGreaterThan,
+                "MAXCUT": sp.StrictLessThan,
+                "MINCUTEQ": sp.GreaterThan,
+                "MAXCUTEQ": sp.StrictLessThan,  # bug in ncteqpp-2.0
             }
 
             class ByType(TypedDict):
@@ -261,7 +255,7 @@ class Settings(jaml.YAMLWrapper):
                 KinVar: str
                 Cut: str
 
-            by_type: dict[str, Cut] = {}
+            by_type: dict[str, sp.Rel] = {}
 
             for cut_yaml in cast(dict[str, dict[str, list[ByType]]], yaml)["Cuts"][
                 "ByType"
@@ -279,7 +273,7 @@ class Settings(jaml.YAMLWrapper):
                 KinVar: str
                 Cut: str
 
-            by_id: dict[int, Cut] = {}
+            by_id: dict[int, sp.Rel] = {}
 
             for cut_yaml in cast(dict[str, dict[str, list[ByID]]], yaml)["Cuts"][
                 "ByID"
@@ -335,7 +329,7 @@ class Settings(jaml.YAMLWrapper):
         self._closed_parameters = []
 
         pattern = re.compile(
-            r"(#*)\s*\[(\w+)\s*,\s*\[[\-0-9.,\s]*\]\s*,\s*(?:FREE|BOUNDED)\]"
+            r"(#*)\s*\[(\w+)\s*,\s*\[[\-0-9eE.,\s]*\]\s*,\s*(?:FREE|BOUNDED)\]"
         )  # pain
         for line in lines:
             for match in pattern.finditer(line):
