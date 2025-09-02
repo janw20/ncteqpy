@@ -329,7 +329,7 @@ class Settings(jaml.YAMLWrapper):
         self._closed_parameters = []
 
         pattern = re.compile(
-            r"(#*)\s*\[(\w+)\s*,\s*\[[\-0-9.,\s]*\]\s*,\s*(?:FREE|BOUNDED)\]"
+            r"(#*)\s*\[(\w+)\s*,\s*\[[\-0-9eE.,\s]*\]\s*,\s*(?:FREE|BOUNDED)\]"
         )  # pain
         for line in lines:
             for match in pattern.finditer(line):
