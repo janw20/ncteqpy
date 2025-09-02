@@ -24,7 +24,7 @@ def plot_scan_1d(
     profile_chi2_groups: pd.DataFrame | None = None,
     groups_labels: dict[str, str] | None = None,
     dof: int | None = None,
-    legend: Literal["true", "false", "last"] = "last",
+    legend: bool | Literal["last","first"] = "last",
     plot_total: bool = True,
     plot_minimum: bool = True, 
     highlight_groups: str | list[str] | None = None,
@@ -162,10 +162,7 @@ def plot_scan_1d(
             ax[i].set(
                 xlabel=f"${parameters_cj15_py_to_tex[p]}$", ylabel=r"$\Delta \chi^2$"
             )
-            ax[i].grid()
-
-            if legend:
-                ax[i].legend()
+            
 
     if modus == "EV":
         if len(ax) != len(eigenvector):
@@ -174,6 +171,7 @@ def plot_scan_1d(
             )
         if not isinstance(minimum, float):
             raise ValueError("minimum chi2 is not a float")
+        
         for i, ev in enumerate(eigenvector):
 
             if profile_chi2 is not None:
@@ -275,12 +273,14 @@ def plot_scan_1d(
             ax[i].set_xlim(profile_evs[ev].min(), profile_evs[ev].max())
 
             ax[i].set(xlabel=f"Step in dir. of EV ${ev+1}$", ylabel=r"$\Delta \chi^2$")
-            ax[i].grid()
-
-    if legend == "true":
+            
+    ax[i].grid()
+    if legend == True:
         for ax_i in ax:
             ax_i.legend()
-    if legend == "last":
+    elif legend =="first":
+        ax[0].legend()
+    elif legend == "last":
         ax[-1].legend()
 
 
