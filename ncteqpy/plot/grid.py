@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from math import ceil
 from typing import Any, cast
+from typing_extensions import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,9 +10,12 @@ import numpy.typing as npt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch
+from matplotlib.artist import Artist
 
 from ncteqpy.plot.util import AdditionalLegend
 from ncteqpy.util import update_kwargs
+
+SubplotPos = Literal["upper right", "upper left", "lower left", "lower right"] | int
 
 
 class AxesGrid:
@@ -33,6 +37,11 @@ class AxesGrid:
     _n_real: int
     _n_none: int
 
+    _n_unit_rows: int
+    _n_unit_cols: int
+    _n_unit_real: int
+    _n_unit_none: int
+
     _sharex: bool
     _sharey: bool
 
@@ -42,19 +51,30 @@ class AxesGrid:
     def __init__(
         self,
         n_real: int,
+        n_cols: int | None = None,
+        n_rows: int | None = None,
         sharex: bool = False,
         sharey: bool = False,
         ax_size: tuple[float, float] = plt.rcParams["figure.figsize"],
+        unit_shape: tuple[int, int] = (1, 1),
+        unit_width_ratios: list[float] | None = None,
+        unit_height_ratios: list[float] | None = None,
         **kwargs: Any,
     ) -> None:
-        """Creates `n` subplots in a grid. If `n > nrows * ncols`, the grid entries on the bottom right don't contain `Axes`.
+        """Creates `n_real` subplots in a grid. If `n_real > nrows * ncols`, the grid entries on the bottom right don't contain `Axes`.
 
         Parameters
         ----------
         n_real : int
-            Actual number of subplot Axes to create
+            Actual number of subplot Axes to create.
         ax_size : tuple[float, float], optional
             Size of one subplot, by default `plt.rcParams["figure.figsize"]`.
+        unit_shape : tuple[int, int], optional
+            Axes subarrays of this shape are left blank in the last row.
+        unit_width_ratios : float | list[float], optional
+            Analogous to the `width_ratios` argument of `plt.subplots`, but only for one unit. If `unit_width_ratios` is None, all Axes in one unit get the same width. `len(unit_width_ratios)` must be equal to `unit_shape[1]`.
+        unit_height_ratios : list[float] | None, optional
+            Analogous to the `height_ratios` argument of `plt.subplots`, but only for one unit. If `unit_height_ratios` is None, all Axes in one unit get the same height. `len(unit_height_ratios)` must be equal to `unit_shape[0]`.
         kwargs : Any
             Keyword arguments passed to `plt.subplots`
 
@@ -67,42 +87,85 @@ class AxesGrid:
         if n_real <= 0:
             n_real = 1
 
-        # the nrows and ncols kwargs
-        kwargs_naxes = {}
+        if n_rows is None and "nrows" in kwargs:
+            n_rows = kwargs["nrows"]
+        if n_cols is None and "ncols" in kwargs:
+            n_cols = kwargs["ncols"]
+
+        if n_rows is not None and n_rows % unit_shape[0] != 0:
+            raise ValueError("n_rows must be divisible by unit_shape[1]")
+        if n_cols is not None and n_cols % unit_shape[1] != 0:
+            raise ValueError("n_cols must be divisible by unit_shape[0]")
+        if n_real % (unit_shape[0] * unit_shape[1]) != 0:
+            raise ValueError(
+                "n_real must be divisible by unit_shape[0] * unit_shape[1]"
+            )
+
+        if (
+            isinstance(unit_height_ratios, list)
+            and not len(unit_height_ratios) == unit_shape[0]
+        ):
+            raise ValueError(f"len(unit_height_ratios) must be {unit_shape[0]}")
+        if (
+            isinstance(unit_width_ratios, list)
+            and not len(unit_width_ratios) == unit_shape[1]
+        ):
+            raise ValueError(f"len(unit_width_ratios) must be {unit_shape[1]}")
+
+        n_unit_rows = n_rows // unit_shape[0] if n_rows is not None else None
+        n_unit_cols = n_cols // unit_shape[1] if n_cols is not None else None
+        n_unit_real = n_real // (unit_shape[0] * unit_shape[1])
 
         # if both nrows and ncols are given, we just have to check if the number of subplots is compatible with the values grouped by subplot_groupby
-        if "nrows" in kwargs and "ncols" in kwargs:
-            if kwargs["nrows"] * kwargs["ncols"] < n_real:
+        if n_unit_rows is not None and n_unit_cols is not None:
+            if n_unit_rows * n_unit_cols < n_unit_real:
                 raise ValueError(
-                    f"nrows * ncols must be greater than or equal {n_real}, the number of requested subplots"
+                    f"n_rows * n_cols must be greater than or equal to n_real"
                 )
-            kwargs_naxes["nrows"] = kwargs["nrows"]
-            kwargs_naxes["ncols"] = kwargs["ncols"]
         # if only nrows is given, we determine ncols automatically
-        elif "nrows" in kwargs:
-            kwargs_naxes["nrows"] = kwargs["nrows"]
-            kwargs_naxes["ncols"] = ceil(n_real / kwargs_naxes["nrows"])
+        elif n_unit_rows is not None:
+            n_unit_cols = ceil(n_unit_real / n_unit_rows)
         # same for ncols
-        elif "ncols" in kwargs:
-            kwargs_naxes["ncols"] = kwargs["ncols"]
-            kwargs_naxes["nrows"] = ceil(n_real / kwargs_naxes["ncols"])
+        elif n_unit_cols is not None:
+            n_unit_rows = ceil(n_unit_real / n_unit_cols)
         # if none of them are given, we try to make the figure as square as possible. ncols is always rounded down since usually the width of a subplot should be larger than the height
         else:
-            kwargs_naxes["ncols"] = round(np.sqrt(n_real))
-            kwargs_naxes["nrows"] = ceil(n_real / kwargs_naxes["ncols"])
+            n_unit_cols = int(round(np.sqrt(n_unit_real)))
+            n_unit_rows = ceil(n_unit_real / n_unit_cols)
+
+        n_rows = n_unit_rows * unit_shape[0]
+        n_cols = n_unit_cols * unit_shape[1]
 
         # how many axes we have to remove in the end
-        n_none = kwargs_naxes["nrows"] * kwargs_naxes["ncols"] - n_real
+        n_unit_none = n_unit_rows * n_unit_cols - n_unit_real
+        n_none = n_unit_none * unit_shape[0] * unit_shape[1]
 
         kwargs_default = {
             "layout": "compressed",
             "figsize": (
-                ax_size[0] * kwargs_naxes["ncols"],
-                ax_size[1] * kwargs_naxes["nrows"],
+                ax_size[0] * n_rows,
+                ax_size[1] * n_cols,
             ),
+            "nrows": n_rows,
+            "ncols": n_cols,
         }
 
-        fig, ax = cast(tuple[Figure, Axes | npt.NDArray[Axes | None]], plt.subplots(sharex=sharex, sharey=sharey, **(kwargs_default | kwargs | kwargs_naxes)))  # type: ignore[type-var]
+        if unit_height_ratios is not None:
+            if len(unit_height_ratios) != unit_shape[0]:
+                raise ValueError(f"len(unit_height_ratios) must be {unit_shape[0]}")
+
+            kwargs_default["height_ratios"] = n_unit_rows * list(unit_height_ratios)
+
+        if unit_width_ratios is not None:
+            if len(unit_width_ratios) != unit_shape[1]:
+                raise ValueError(f"len(unit_width_ratios) must be {unit_shape[1]}")
+
+            kwargs_default["width_ratios"] = n_unit_cols * list(unit_width_ratios)
+
+        fig, ax = cast(
+            tuple[Figure, Axes | npt.NDArray[Axes | None]],
+            plt.subplots(sharex=sharex, sharey=sharey, **(kwargs_default | kwargs)),
+        )  # pyright: ignore[reportInvalidTypeForm]
 
         self._ax_all = np.atleast_2d(ax)
 
@@ -111,18 +174,38 @@ class AxesGrid:
         self._ax_real = self._ax.flat[:-n_none] if n_none > 0 else self._ax.flatten()
 
         if isinstance(ax, np.ndarray):
-            # remove the superfluous axes in the last row
+            # remove the superfluous axes in the lower left corner
             if n_none > 0:
-                self._ax[-1, -n_none:] = None
+                self._ax[-unit_shape[0] :, -n_unit_none * unit_shape[1] :] = None
 
         self._n_real = n_real
         self._n_none = n_none
-        self._n_rows, self._n_cols = self._ax.shape
+        self._n_rows = n_rows
+        self._n_cols = n_cols
 
+        self._n_unit_real = n_unit_real
+        self._n_unit_none = n_unit_none
+        self._n_unit_rows = n_unit_rows
+        self._n_unit_cols = n_unit_cols
+
+        # TFFF
+        # TFFF
+        # TF
+        # TF
         mask_left = np.zeros_like(self.ax_real, dtype=bool)
         mask_left[:: self.n_cols] = True
+
+        # FFFF
+        # FFTT
+        # FF
+        # TT
         mask_bottom = np.zeros_like(self.ax_real, dtype=bool)
-        mask_bottom[-self.n_cols :] = True
+        num_axes_last_row = n_cols - n_unit_none * unit_shape[1]
+        mask_bottom[-num_axes_last_row:] = True
+        mask_bottom[
+            -num_axes_last_row * unit_shape[0]
+            - n_unit_none * unit_shape[1] : -num_axes_last_row * unit_shape[0]
+        ] = True
 
         self._ax_left = self._ax_real[mask_left]
         self._ax_right = self._ax_real[~mask_left]
@@ -137,9 +220,10 @@ class AxesGrid:
 
         if sharex:
             for ax_i in self.ax[:-1, :].flat:
-                ax_i: plt.Axes
-                ax_i.tick_params("x", which="both", labelbottom=False)
-                ax_i.set_xlabel("")
+                if ax_i is not None:
+                    ax_i: plt.Axes
+                    ax_i.tick_params("x", which="both", labelbottom=False)
+                    ax_i.set_xlabel("")
 
         if sharey:
             for ax_i in self.ax_right:
@@ -210,6 +294,25 @@ class AxesGrid:
     def sharey(self) -> bool:
         """True if ylabels and yticks are shared"""
         return self._sharey
+
+    @property
+    def n_unit_rows(self) -> int:
+        """Number of unit rows in the grid"""
+        return self._n_unit_rows
+
+    @property
+    def n_unit_cols(self) -> int:
+        """Number of unit columns in the grid"""
+        return self._n_unit_cols
+
+    @property
+    def n_unit_real(self) -> int:
+        """Number of actual (not left blank) units"""
+        return self._n_unit_real
+
+    @property
+    def n_unit_none(self) -> int:
+        return self._n_unit_none
 
     @property
     def n_rows(self) -> int:
@@ -320,6 +423,22 @@ class AxesGrid:
 
             leg2 = AdditionalLegend(**kwargs_updated)
             ax.add_artist(leg2)
+
+    def locate_ax(self, pos: SubplotPos) -> plt.Axes:
+        if isinstance(pos, int):
+            return self.ax_real[pos]
+        elif pos == "upper right":
+            return self.ax_top[self.n_cols - 1]
+        elif pos == "upper left":
+            return self.ax_real[0]
+        elif pos == "lower left":
+            return self.ax_bottom[-1]
+        elif pos == "lower right":
+            return self.ax_left[-1]
+
+    def add_artist(self, artist: Artist, pos: SubplotPos | None = None) -> None:
+        if pos is not None:
+            self.locate_ax(pos).add_artist(artist)
 
     def prune_labels(self) -> None:
         if self.sharex:
