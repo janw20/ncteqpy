@@ -12,6 +12,8 @@ chi2fcn_per_point_breakdown_yaml_to_py = {
     "Chi2": "chi2",
     "Data": "data",
     "Theo": "theory",
+    "ShiftCorr": "shift_correlated",
+    "Chi2Shifted": "chi2_shifted",
     "KinVarVals": "kinetic_variables",
     "TypeExp": "type_experiment",
     "FSHadron": "final_state_hadron",

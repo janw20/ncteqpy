@@ -13,6 +13,7 @@ import ncteqpy.data as data
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
 import ncteqpy.util as util
+from ncteqpy._typing import SequenceNotStr
 from ncteqpy.data_groupby import DatasetsGroupBy
 from ncteqpy.plot import data_vs_theory
 from ncteqpy.plot.chi2_histograms import (
@@ -20,8 +21,13 @@ from ncteqpy.plot.chi2_histograms import (
     plot_chi2_histogram,
     plot_S_E_histogram,
 )
+from ncteqpy.plot.data_vs_theory import DataVsTheoryType
 from ncteqpy.plot.grid import AxesGrid
 from ncteqpy.plot.util import AdditionalLegend
+
+LegendPos = (
+    Literal["upper right", "upper left", "lower left", "lower right"] | int | None
+)
 
 
 # TODO: implement pickling for the other members
@@ -43,10 +49,18 @@ class Chi2(jaml.YAMLWrapper):
     _snapshots_values: npt.NDArray[np.float64] | None = None
     _snapshots_breakdown_points: pd.DataFrame | None = None
     _snapshots_breakdown_datasets: pd.DataFrame | None = None
+    _snapshots_breakdown_nuisance: pd.DataFrame | None = None
     _num_points: pd.Series[int] | None = None
 
-    _S_E: pd.Series[float] | None = None
-    _points: pd.DataFrame | None = None
+    _minimum_snapshot_index: int | None = None
+    _minimum_value: float | None = None
+    _minimum_parameters: pd.Series[float] | None = None
+    _minimum_value_per_data: pd.Series[float] | None = None
+    # fmt: off
+    _minimum_nuisance_parameters: pd.Series[npt.NDArray[np.float64]] | None = None  # pyright: ignore[reportInvalidTypeArguments]
+    # fmt: on
+    _minimum_points: pd.DataFrame | None = None
+    _minimum_S_E: pd.Series[float] | None = None
 
     def __init__(
         self,
@@ -62,25 +76,34 @@ class Chi2(jaml.YAMLWrapper):
     def _load_snapshots_without_breakdown_points(self) -> None:
 
         self._snapshots_parameters = cast(
-            pd.DataFrame, self._unpickle("chi2_snapshots_parameters")
+            pd.DataFrame | None, self._unpickle("chi2_snapshots_parameters")
         )
         self._snapshots_values = cast(
-            npt.NDArray[np.float64], self._unpickle("chi2_snapshots_values")
+            npt.NDArray[np.float64] | None, self._unpickle("chi2_snapshots_values")
         )
         self._snapshots_breakdown_datasets = cast(
-            pd.DataFrame, self._unpickle("chi2_snapshots_breakdown_datasets")
+            pd.DataFrame | None, self._unpickle("chi2_snapshots_breakdown_datasets")
+        )
+        self._snapshots_breakdown_nuisance = cast(
+            pd.DataFrame | None, self._unpickle("chi2_snapshots_breakdown_nuisance")
         )
 
         if (
             self._snapshots_parameters is None
             or self._snapshots_values is None
             or self._snapshots_breakdown_datasets is None
+            or self._snapshots_breakdown_nuisance is None
         ):
             pattern = jaml.Pattern(
                 {
                     "Chi2Fcn": {
                         "Snapshots": [
-                            {"par": None, "chi2Value": None, "perDataBreakdown": None}
+                            {
+                                "par": None,
+                                "chi2Value": None,
+                                "perDataBreakdown": None,
+                                "nuisanceCorrBreakdown": None,
+                            }
                         ]
                     }
                 }
@@ -90,7 +113,7 @@ class Chi2(jaml.YAMLWrapper):
             assert isinstance(yaml, dict)
 
             snapshots = cast(
-                list[dict[str, object]], jaml.nested_get(yaml, ["Chi2Fcn", "Snapshots"])
+                list[dict[str, Any]], jaml.nested_get(yaml, ["Chi2Fcn", "Snapshots"])
             )
 
             self._snapshots_parameters = pd.DataFrame.from_records(
@@ -107,11 +130,25 @@ class Chi2(jaml.YAMLWrapper):
             self._snapshots_breakdown_datasets.columns.name = "id_dataset"
             self._snapshots_breakdown_datasets.index.name = "id_snapshot"
 
+            if "nuisanceCorrBreakdown" in snapshots[0]:
+                self._snapshots_breakdown_nuisance = pd.DataFrame.from_records(
+                    [
+                        {k: np.array(v) for k, v in s["nuisanceCorrBreakdown"].items()}
+                        for s in snapshots
+                    ]
+                )
+                self._snapshots_breakdown_nuisance.columns.name = "id_dataset"
+                self._snapshots_breakdown_nuisance.index.name = "id_snapshot"
+
             self._pickle(self._snapshots_parameters, "chi2_snapshots_parameters")
             self._pickle(self._snapshots_values, "chi2_snapshots_values")
             self._pickle(
                 self._snapshots_breakdown_datasets,
                 "chi2_snapshots_breakdown_datasets",
+            )
+            self._pickle(
+                self._snapshots_breakdown_nuisance,
+                "chi2_snapshots_breakdown_nuisance",
             )
 
     # parsing the perPointBreakdowns takes much longer than all the other fields, so we load these separately
@@ -155,8 +192,12 @@ class Chi2(jaml.YAMLWrapper):
             int_cols = [
                 "id_point",
                 "id_dataset",
-                "id_bin",
             ]  # no A and Z here since they are sometimes non-integer
+
+            # not all experiments have id_bin
+            if "id_bin" in self._snapshots_breakdown_points:
+                int_cols.append("id_bin")
+
             self._snapshots_breakdown_points[int_cols] = (
                 self._snapshots_breakdown_points[int_cols].astype("Int64", copy=False)
             )
@@ -410,6 +451,15 @@ class Chi2(jaml.YAMLWrapper):
         return self._snapshots_breakdown_datasets
 
     @property
+    def snapshots_breakdown_nuisance(self) -> pd.DataFrame:
+        if self._snapshots_breakdown_nuisance is None or self._yaml_changed():
+            self._load_snapshots_without_breakdown_points()
+
+        assert self._snapshots_breakdown_nuisance is not None
+
+        return self._snapshots_breakdown_nuisance
+
+    @property
     def snapshots_breakdown_points(self) -> pd.DataFrame:
         if self._snapshots_breakdown_points is None or self._yaml_changed():
             self._load_snapshots_breakdown_points()
@@ -431,10 +481,70 @@ class Chi2(jaml.YAMLWrapper):
         return self._num_points
 
     @property
-    def points(self) -> pd.DataFrame:
-        if self._points is None or self._yaml_changed():
+    def minimum_snapshot_index(self) -> int:
+        if self._minimum_snapshot_index is None or self._yaml_changed():
+            self._minimum_snapshot_index = int(self.snapshots_values.argmin())
+
+        return self._minimum_snapshot_index
+
+    @property
+    def minimum_value(self) -> float:
+        if self._minimum_value is None or self._yaml_changed():
+            self._minimum_value = float(
+                self.snapshots_values[self.minimum_snapshot_index]
+            )
+
+        return self._minimum_value
+
+    @property
+    def minimum_parameters(self) -> pd.Series[float]:
+        if self._minimum_parameters is None or self._yaml_changed():
+            minimum_parameters = self.snapshots_parameters.loc[
+                self.minimum_snapshot_index
+            ]
+
+            assert isinstance(minimum_parameters, pd.Series)
+
+            self._minimum_parameters = minimum_parameters
+
+        return self._minimum_parameters
+
+    @property
+    def minimum_value_per_data(self) -> pd.Series[float]:
+        if self._minimum_value_per_data is None or self._yaml_changed():
+            minimum_per_data = self.snapshots_breakdown_datasets.loc[
+                self.minimum_snapshot_index
+            ]
+
+            assert isinstance(minimum_per_data, pd.Series)
+
+            self._minimum_value_per_data = minimum_per_data
+
+        return self._minimum_value_per_data
+
+    @property
+    def minimum_nuisance_parameters(
+        self,
+    ) -> pd.Series[
+        npt.NDArray[np.float64]  # pyright: ignore[reportInvalidTypeArguments]
+    ]:
+        if self._minimum_nuisance_parameters is None or self._yaml_changed():
+            minimum_nuisance_parameters = self.snapshots_breakdown_nuisance.loc[
+                self.minimum_snapshot_index
+            ]
+
+            assert isinstance(minimum_nuisance_parameters, pd.Series)
+
+            self._minimum_nuisance_parameters = minimum_nuisance_parameters
+
+        return self._minimum_nuisance_parameters
+
+    @property
+    def minimum_points(self) -> pd.DataFrame:
+        if self._minimum_points is None or self._yaml_changed():
             points_snapshots = cast(
-                pd.DataFrame, self.snapshots_breakdown_points.loc[1].copy()
+                pd.DataFrame,
+                self.snapshots_breakdown_points.loc[self.minimum_snapshot_index].copy(),
             ).sort_values(
                 "id_dataset"
             )  # FIXME figure out which snapshots to read
@@ -476,40 +586,45 @@ class Chi2(jaml.YAMLWrapper):
                 points_list.append(
                     pd.merge(points1_i, points2_i[cols], how="left", on=match_cols)
                 )
-            self._points = pd.concat(points_list)
-            self._points.index = self.snapshots_breakdown_points.loc[1].index.copy()
+            self._minimum_points = pd.concat(points_list)
+            self._minimum_points.index = self.snapshots_breakdown_points.loc[
+                1
+            ].index.copy()
 
             # assert self._points["unc_tot"].notna().sum() == datasets_points["unc_tot"]
 
             # compute PDF uncertainties for each point
-            for col_in in (
-                "theory",
-                "theory_with_normalization_only",
-                "theory_with_normalization",
+            if self.snapshots_breakdown_points.shape[0] > 2 * len(
+                self.parameters_names
             ):
-                for col_out, func in (
-                    ("pdf_unc_sym", util.pdf_uncertainty_sym),
-                    ("pdf_unc_asym_lower", util.pdf_uncertainty_asym_lower),
-                    ("pdf_unc_asym_upper", util.pdf_uncertainty_asym_upper),
+                for col_in in (
+                    "theory",
+                    "theory_with_normalization_only",
+                    "theory_with_normalization",
                 ):
-                    self._points[f"{col_in}_{col_out}"] = (
-                        self.snapshots_breakdown_points.loc[1:]
-                        .groupby("id_point")[col_in]
-                        .apply(func)
-                    )
+                    for col_out, func in (
+                        ("pdf_unc_sym", util.pdf_uncertainty_sym),
+                        ("pdf_unc_asym_lower", util.pdf_uncertainty_asym_lower),
+                        ("pdf_unc_asym_upper", util.pdf_uncertainty_asym_upper),
+                    ):
+                        self._minimum_points[f"{col_in}_{col_out}"] = (
+                            self.snapshots_breakdown_points.loc[1:]
+                            .groupby("id_point")[col_in]
+                            .apply(func)
+                        )
 
-        return self._points
+        return self._minimum_points
 
     @property
-    def S_E(self) -> pd.Series[float]:
-        if self._S_E is None or self._yaml_changed():
-            self._S_E = cast(
+    def minimum_S_E(self) -> pd.Series[float]:
+        if self._minimum_S_E is None or self._yaml_changed():
+            self._minimum_S_E = cast(
                 pd.Series,
-                np.sqrt(2 * self.last_value_per_data)
+                np.sqrt(2 * self.minimum_value_per_data)
                 - np.sqrt(2 * self.num_points - 1),
             )
 
-        return self._S_E
+        return self._minimum_S_E
 
     def plot_data_breakdown(
         self,
@@ -522,6 +637,7 @@ class Chi2(jaml.YAMLWrapper):
         bar_groupby: DatasetsGroupBy | None = None,
         bar_props_groupby: DatasetsGroupBy | None = None,
         bar_order_groupby: str | list[str] | None = None,
+        bar_labels: Literal["num_points", "chi2"] = "num_points",
         kwargs_bar: dict[str, Any] = {},
         kwargs_bar_label: dict[str, Any] = {},
         kwargs_chi2_line_1: dict[str, Any] = {},
@@ -547,6 +663,8 @@ class Chi2(jaml.YAMLWrapper):
             How to group the bars, by default no grouping. One bar per group is plotted.
         bar_props_groupby : DatasetsGroupBy | None, optional
             How to group the properties (color etc.) of each bar, by default no grouping, i.e., all bars get the same properties.
+        bar_labels : Literal["num_points", "chi2"], optional
+            If the bars should be labeled with the number of points ("num_points") or the χ² value ("chi2"), by default "num_points".
         kwargs_bar : dict[str, Any], optional
             Keyword arguments to pass to `plt.Axes.bar` or `plt.Axes.barh`.
         kwargs_bar_label : dict[str, Any], optional
@@ -563,9 +681,9 @@ class Chi2(jaml.YAMLWrapper):
             id_dataset = list(id_dataset)
 
         chi2 = (
-            self.last_value_per_data.loc[id_dataset]
+            self.minimum_value_per_data.loc[id_dataset]
             if id_dataset is not None
-            else self.last_value_per_data
+            else self.minimum_value_per_data
         )
 
         plot_chi2_data_breakdown(
@@ -579,6 +697,7 @@ class Chi2(jaml.YAMLWrapper):
             bar_groupby=bar_groupby,
             bar_props_groupby=bar_props_groupby,
             bar_order_groupby=bar_order_groupby,
+            bar_labels=bar_labels,
             kwargs_bar=kwargs_bar,
             kwargs_bar_label=kwargs_bar_label,
             kwargs_chi2_line_1=kwargs_chi2_line_1,
@@ -612,7 +731,7 @@ class Chi2(jaml.YAMLWrapper):
         """
 
         return plot_chi2_histogram(
-            chi2=self.points,
+            chi2=self.minimum_points,
             bin_width=bin_width,
             subplot_groupby=subplot_groupby,
             kwargs_subplots=kwargs_subplots,
@@ -655,7 +774,7 @@ class Chi2(jaml.YAMLWrapper):
         """
 
         return plot_S_E_histogram(
-            S_E=self.S_E,
+            S_E=self.minimum_S_E,
             bin_width=bin_width,
             subplot_groupby=subplot_groupby,
             kwargs_subplots=kwargs_subplots,
@@ -664,6 +783,17 @@ class Chi2(jaml.YAMLWrapper):
             kwargs_fit=kwargs_fit,
             kwargs_gaussian_fit=kwargs_gaussian_fit,
         )
+
+    # def plot_nuisance_histogram(
+    #     self,
+    #     bin_width: float | None = None,
+    #     subplot_groupby: DatasetsGroupBy | None = None,
+    #     kwargs_subplots: dict[str, Any] = {},
+    #     kwargs_histogram: dict[str, Any] | list[dict[str, Any] | None] = {},
+    #     kwargs_gaussian: dict[str, Any] | list[dict[str, Any] | None] = {},
+    #     kwargs_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
+    #     kwargs_gaussian_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
+    # ) -> AxesGrid:
 
     @overload
     def plot_data_vs_theory(
@@ -676,7 +806,7 @@ class Chi2(jaml.YAMLWrapper):
         xscale: str | None = ...,
         yscale: str | None = ...,
         title: str | None = ...,
-        legend: bool = ...,
+        legend: LegendPos = ...,
         curve_label: (
             Literal[
                 "annotate above",
@@ -690,9 +820,10 @@ class Chi2(jaml.YAMLWrapper):
         subplot_label: Literal["legend"] | None = ...,
         subplot_label_format: str | None = ...,
         chi2_annotation: bool = ...,
-        chi2_legend: bool = ...,
+        chi2_legend: LegendPos = ...,
         curve_groupby: str | list[str] | Literal["fallback"] | None = ...,
         apply_normalization: bool = ...,
+        shift_correlated: Literal["data", "theory"] | None = "theory",
         theory_min_width: float = ...,
         plot_pdf_uncertainty: bool = ...,
         pdf_uncertainty_convention: Literal["sym", "asym"] = ...,
@@ -753,6 +884,8 @@ class Chi2(jaml.YAMLWrapper):
             Variable(s) to group the curves by, by default "fallback".
         apply_normalization : bool, optional
             If the normalization-corrected theory is plotted, by default True.
+        shift_correlated : Literal["data", "theory"], optional
+            Whether to shift data or theory when correlated errors are present, by default "theory". For details, see arXiv:hep-ph/0201195 appendix B.2.
         theory_min_width : float, optional
             Width of the theory curve (in units of axes fraction) if there is only one point, by default 0.06.
         plot_pdf_uncertainty : bool, optional
@@ -809,7 +942,7 @@ class Chi2(jaml.YAMLWrapper):
         xscale: str | None = ...,
         yscale: str | None = ...,
         title: str | None = ...,
-        legend: bool = ...,
+        legend: LegendPos = ...,
         curve_label: (
             Literal[
                 "annotate above",
@@ -823,9 +956,10 @@ class Chi2(jaml.YAMLWrapper):
         subplot_label: Literal["legend"] | None = ...,
         subplot_label_format: str | None = ...,
         chi2_annotation: bool = ...,
-        chi2_legend: bool = ...,
+        chi2_legend: LegendPos = ...,
         curve_groupby: str | list[str] | Literal["fallback"] | None = ...,
         apply_normalization: bool = ...,
+        shift_correlated: Literal["data", "theory"] | None = "theory",
         theory_min_width: float = ...,
         plot_pdf_uncertainty: bool = ...,
         pdf_uncertainty_convention: Literal["sym", "asym"] = ...,
@@ -886,6 +1020,8 @@ class Chi2(jaml.YAMLWrapper):
             Variable(s) to group the curves by, by default "fallback".
         apply_normalization : bool, optional
             If the normalization-corrected theory is plotted, by default True.
+        shift_correlated : Literal["data", "theory"], optional
+            Whether to shift data or theory when correlated errors are present, by default "theory". For details, see arXiv:hep-ph/0201195 appendix B.2.
         theory_min_width : float, optional
             Width of the theory curve (in units of axes fraction) if there is only one point, by default 0.06.
         plot_pdf_uncertainty : bool, optional
@@ -941,7 +1077,7 @@ class Chi2(jaml.YAMLWrapper):
         xscale: str | None = None,
         yscale: str | None = None,
         title: str | None = None,
-        legend: bool = True,
+        legend: LegendPos = "upper right",
         curve_label: (
             Literal[
                 "annotate above",
@@ -955,9 +1091,10 @@ class Chi2(jaml.YAMLWrapper):
         subplot_label: Literal["legend"] | None = None,
         subplot_label_format: str | None = None,
         chi2_annotation: bool = True,
-        chi2_legend: bool = True,
+        chi2_legend: LegendPos = "upper right",
         curve_groupby: str | list[str] | Literal["fallback"] | None = "fallback",
         apply_normalization: bool = True,
+        shift_correlated: Literal["data", "theory"] | None = "theory",
         theory_min_width: float = 0.06,
         plot_pdf_uncertainty: bool = True,
         pdf_uncertainty_convention: Literal["sym", "asym"] = "asym",
@@ -998,6 +1135,7 @@ class Chi2(jaml.YAMLWrapper):
             chi2_legend=chi2_legend,
             curve_groupby=curve_groupby,
             apply_normalization=apply_normalization,
+            shift_correlated=shift_correlated,
             theory_min_width=theory_min_width,
             plot_pdf_uncertainty=plot_pdf_uncertainty,
             pdf_uncertainty_convention=pdf_uncertainty_convention,
@@ -1039,7 +1177,7 @@ class Chi2(jaml.YAMLWrapper):
         xscale: str | None = None,
         yscale: str | None = None,
         title: str | None = None,
-        legend: bool = True,
+        legend: LegendPos = "upper right",
         curve_label: (
             Literal[
                 "annotate above",
@@ -1049,13 +1187,15 @@ class Chi2(jaml.YAMLWrapper):
             ]
             | None
         ) = "ticks",
+        types: DataVsTheoryType | SequenceNotStr[DataVsTheoryType] = ["absolute"],
         subplot_groupby: str | None = None,
         subplot_label: Literal["legend"] | None = None,
         subplot_label_format: str | None = None,
         chi2_annotation: bool = True,
-        chi2_legend: bool = True,
+        chi2_legend: LegendPos = "upper right",
         curve_groupby: str | list[str] | Literal["fallback"] | None = "fallback",
         apply_normalization: bool = True,
+        shift_correlated: Literal["data", "theory"] | None = "theory",
         theory_min_width: float = 0.06,
         plot_pdf_uncertainty: bool = True,
         pdf_uncertainty_convention: Literal["sym", "asym"] = "asym",
@@ -1086,14 +1226,16 @@ class Chi2(jaml.YAMLWrapper):
                     "Please provide either `id_dataset` or `type_experiment`"
                 )
             else:
-                points = self.points.query("type_experiment == @type_experiment")
+                points = self.minimum_points.query(
+                    "type_experiment == @type_experiment"
+                )
                 id_dataset = cast(
                     Sequence[int], points["id_dataset"].unique()
                 )  # actually npt.NDArray[np.int_]
         else:
             if isinstance(id_dataset, int):
                 id_dataset = [id_dataset]
-            points = self.points.query("id_dataset in @id_dataset")
+            points = self.minimum_points.query("id_dataset in @id_dataset")
             types_experiment = points["type_experiment"].unique()
             if len(types_experiment) == 1:
                 if type_experiment is None:
@@ -1106,6 +1248,9 @@ class Chi2(jaml.YAMLWrapper):
                 raise ValueError(
                     "Please provide datasets that are each of the same type_experiment"
                 )
+
+        if isinstance(types, str):
+            types = [types]
 
         # group the relevant dataset IDs so we get one dataset per figure
         fig_gb = points.query("id_dataset in @id_dataset").groupby(
@@ -1129,18 +1274,44 @@ class Chi2(jaml.YAMLWrapper):
             kwargs_subplots_default = {
                 "sharex": True,
                 "sharey": True,
+                "unit_shape": (len(types), 1),
+                "unit_height_ratios": [(2 if t == "absolute" else 1) for t in types],
                 "layout": "constrained",
             }
             kwargs_subplots_updated = util.update_kwargs(
                 kwargs_subplots_default, kwargs_subplots, i
             )
 
-            n_real = 1 if subplot_gb is None else len(subplot_gb)
+            n_real = len(types) if subplot_gb is None else len(subplot_gb) * len(types)
 
             ax_grid = AxesGrid(n_real=n_real, **kwargs_subplots_updated)
 
+            if chi2_legend is not None:
+                ax_legend_chi2 = ax_grid.locate_ax(chi2_legend)
+                kwargs_legend_chi2_default = {
+                    "order": 0,
+                    "parent": ax_legend_chi2,
+                    "handles": [Patch(), Patch(), Patch()],
+                    "labels": [
+                        f"$N_{{\\text{{points}}}} = {self.num_points[id_dataset_i]}$",
+                        f"$\\chi^2_{{\\text{{total}}}} = {self.minimum_value_per_data[id_dataset_i]:.3f}$",
+                        f"$\\chi^2_{{\\text{{total}}}}\\,/\\, N_{{\\text{{points}}}} = {self.minimum_value_per_data[id_dataset_i] / self.num_points[id_dataset_i]:.3f}$",
+                    ],
+                    "labelspacing": 0,
+                    "handlelength": 0,
+                    "handleheight": 0,
+                    "handletextpad": 0,
+                }
+                kwargs_legend_chi2_updated = util.update_kwargs(
+                    kwargs_legend_chi2_default, kwargs_legend_chi2
+                )
+
+                ax_legend_chi2.add_artist(
+                    AdditionalLegend(**kwargs_legend_chi2_updated)
+                )
+
             ax_iter = zip(
-                ax_grid.ax_real.flatten(),
+                ax_grid.ax_unit_real,
                 (subplot_gb if subplot_gb is not None else [(np.nan, data_i)]),
             )
             for ax_i, (ax_gb_val_i, data_ij) in ax_iter:
@@ -1171,24 +1342,28 @@ class Chi2(jaml.YAMLWrapper):
                 else:
                     kwargs_i = {}
 
+                kwargs_i.update(xlabel=xlabel, ylabel=ylabel)
+
                 data_vs_theory.plot(
                     type_experiment=type_experiment,
-                    ax=ax_i,
+                    ax=ax_i[:, 0],
                     points=data_ij,
                     x_variable=x_variable,
-                    xlabel=xlabel,
-                    ylabel=ylabel,
+                    # xlabel=xlabel,
+                    # ylabel=ylabel,
                     xscale=xscale,
                     yscale=yscale,
                     title=title,
-                    legend=legend,
+                    legend=legend is not None
+                    and ax_grid.locate_ax(legend) == ax_i[0, 0],  # FIXME
                     curve_label=curve_label,
-                    subplot_label=subplot_label,
+                    # subplot_label=subplot_label,
                     subplot_label_format=subplot_label_format,
                     chi2_annotation=chi2_annotation,
-                    chi2_legend=chi2_legend,
+                    chi2_legend=False,
                     curve_groupby=curve_groupby,
                     apply_normalization=apply_normalization,
+                    shift_correlated=shift_correlated,
                     theory_min_width=theory_min_width,
                     plot_pdf_uncertainty=plot_pdf_uncertainty,
                     pdf_uncertainty_convention=pdf_uncertainty_convention,
@@ -1235,7 +1410,7 @@ class Chi2(jaml.YAMLWrapper):
 
                     subplot_legend = AdditionalLegend(
                         -1,
-                        ax_i,
+                        ax_i[0, 0],
                         handles=[Patch()],
                         labels=[label],
                         labelspacing=0,
@@ -1244,7 +1419,7 @@ class Chi2(jaml.YAMLWrapper):
                         handletextpad=0,
                         fontsize="small",
                     )
-                    ax_i.add_artist(subplot_legend)
+                    ax_i[0, 0].add_artist(subplot_legend)
 
             ax_grid.prune_labels()
 
@@ -1397,14 +1572,16 @@ class Chi2(jaml.YAMLWrapper):
                     "Please provide either `id_dataset` or `type_experiment`"
                 )
             else:
-                points = self.points.query("type_experiment == @type_experiment")
+                points = self.minimum_points.query(
+                    "type_experiment == @type_experiment"
+                )
                 id_dataset = cast(
                     Sequence[int], points["id_dataset"].unique()
                 )  # actually npt.NDArray[np.int_]
         else:
             if isinstance(id_dataset, int):
                 id_dataset = [id_dataset]
-            points = self.points.query("id_dataset in @id_dataset")
+            points = self.minimum_points.query("id_dataset in @id_dataset")
             types_experiment = points["type_experiment"].unique()
             if len(types_experiment) == 1:
                 if type_experiment is None:

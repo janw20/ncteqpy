@@ -25,6 +25,7 @@ class AxesGrid:
     _ax: npt.NDArray[Axes | None]
     _ax_all: npt.NDArray[Axes]
     _ax_real: npt.NDArray[Axes]
+    _ax_unit_real: npt.NDArray[Axes]
 
     _ax_left: npt.NDArray[Axes]
     _ax_right: npt.NDArray[Axes]
@@ -143,8 +144,8 @@ class AxesGrid:
         kwargs_default = {
             "layout": "compressed",
             "figsize": (
-                ax_size[0] * n_rows,
-                ax_size[1] * n_cols,
+                ax_size[0] * n_unit_cols,
+                ax_size[1] * n_unit_rows,
             ),
             "nrows": n_rows,
             "ncols": n_cols,
@@ -172,6 +173,7 @@ class AxesGrid:
         self._fig = fig
         self._ax = np.atleast_2d(np.array(ax, copy=True))
         self._ax_real = self._ax.flat[:-n_none] if n_none > 0 else self._ax.flatten()
+        self._ax_unit_real = self._ax_real.reshape((n_unit_real, unit_shape[0], unit_shape[1]))
 
         if isinstance(ax, np.ndarray):
             # remove the superfluous axes in the lower left corner
@@ -335,11 +337,13 @@ class AxesGrid:
 
     @property
     def ax_real(self) -> npt.NDArray[Axes]:
-        """numpy.array containing the actual (not left blank) axes"""
-        if self._ax_real is None:
-            self._ax_real = np.array([ax for ax in self.ax.flat if ax is not None])
-
+        """numpy.array of shape (n_real,) containing the actual (not left blank) axes"""
         return self._ax_real
+    
+    @property
+    def ax_unit_real(self) -> npt.NDArray[Axes]:
+        """numpy.array of shape (n_unit_real, unit_shape[0], unit_shape[1]) containing the actual (not left blank) axes"""
+        return self._ax_unit_real
 
     @property
     def indices_real(self) -> npt.NDArray[tuple[int, int]]:
