@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import copy
 import os
 from pathlib import Path
-from typing_extensions import Any, Hashable, Literal, Sequence, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,10 +10,11 @@ import numpy.typing as npt
 import pandas as pd
 import sympy as sp
 import yaml
+from typing_extensions import Any, Hashable, Literal, Sequence, cast
 
-from ncteqpy._typing import SequenceNotStr
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
+from ncteqpy._typing import SequenceNotStr
 from ncteqpy.cuts import Cuts, cut_accepts
 from ncteqpy.data_groupby import DatasetsGroupBy
 from ncteqpy.kinematic_variables import (
@@ -128,6 +129,51 @@ class Datasets(jaml.YAMLWrapper):
     @property
     def cached_datasets_with_cuts(self) -> dict[Path, Dataset]:
         return self._cached_datasets_with_cuts
+
+    def filter(
+        self, include: Sequence[int] | None = None, exclude: Sequence[int] | None = None
+    ) -> Datasets:
+        """Return new `Datasets` with filtered IDs.
+
+        Parameters
+        ----------
+        include : Sequence[int] | None, optional
+            Data set IDs to include, by default None
+        exclude : Sequence[int] | None, optional
+            Data set IDs to exclude, by default None
+
+        Returns
+        -------
+        Datasets
+            Data sets with filtered IDs
+        """
+        new_datasets = copy.deepcopy(self)
+
+        def filter_df(df: pd.DataFrame | None) -> pd.DataFrame | None:
+            if df is None:
+                return None
+
+            mask = df["id_dataset"].isin(include) if include is not None else True
+            if exclude is not None:
+                mask &= ~df["id_dataset"].isin(exclude)
+
+            return df[slice(None) if mask is True else mask]
+
+        # we need to load the index, otherwise we cannot resolve the data set IDs
+        new_datasets._index = filter_df(new_datasets.index)
+
+        new_datasets._points = filter_df(new_datasets._points)
+        new_datasets._points_after_cuts = filter_df(new_datasets._points_after_cuts)
+
+        new_datasets.paths = new_datasets.index["path"].to_list()
+
+        if new_datasets._cuts is not None:
+            new_datasets._cuts = new_datasets._cuts.filter(include, exclude)
+
+        new_datasets._cached_datasets = {}
+        new_datasets._cached_datasets_with_cuts = {}
+
+        return new_datasets
 
     def filtered_index(
         self,
