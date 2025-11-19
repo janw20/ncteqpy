@@ -512,9 +512,13 @@ def plot_common(
             kwargs_tick_curves=kwargs_ticks_curves,
         )
 
+    x_fallback = x_variable if isinstance(x_variable, str) else x_variable[0]
+    if x_variable in nc_labels.kinvars_py_to_tex:
+        x_fallback = f"${nc_labels.kinvars_py_to_tex[x_variable]}"
+
     _set_labels(
         ax=ax,
-        x_fallback=f"${nc_labels.kinvars_py_to_tex[x_variable if isinstance(x_variable, str) else x_variable[0]]}$",
+        x_fallback=x_fallback,
         y_fallback="",
         x_label=xlabel,
         kwargs_xlabel=kwargs_xlabel,
