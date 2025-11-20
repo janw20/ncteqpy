@@ -513,8 +513,8 @@ def plot_common(
         )
 
     x_fallback = x_variable if isinstance(x_variable, str) else x_variable[0]
-    if x_variable in nc_labels.kinvars_py_to_tex:
-        x_fallback = f"${nc_labels.kinvars_py_to_tex[x_variable]}"
+    if x_fallback in nc_labels.kinvars_py_to_tex:
+        x_fallback = f"${nc_labels.kinvars_py_to_tex[x_fallback]}"
 
     _set_labels(
         ax=ax,
