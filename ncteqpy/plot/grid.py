@@ -432,7 +432,7 @@ class AxesGrid:
         if isinstance(pos, int):
             return self.ax_real[pos]
         elif pos == "upper right":
-            return self.ax_top[self.n_cols - 1]
+            return self.ax_real[self.n_cols - 1]
         elif pos == "upper left":
             return self.ax_real[0]
         elif pos == "lower left":
