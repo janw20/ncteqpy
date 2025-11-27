@@ -567,7 +567,8 @@ class Chi2(jaml.YAMLWrapper):
 
                 points2_i = datasets_points.loc[[id_dataset]].reset_index("id_dataset")
 
-                assert isinstance(kinematic_variables, list)
+                if not isinstance(kinematic_variables, list):
+                    raise ValueError(f"Expected list for kinematic_variables of data set with ID {id_dataset}, got {kinematic_variables}")
 
                 match_cols = (
                     ["id_dataset"]
@@ -816,6 +817,7 @@ class Chi2(jaml.YAMLWrapper):
             ]
             | None
         ) = ...,
+        plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = ...,
         subplot_groupby: str | None = ...,
         subplot_label: Literal["legend"] | None = ...,
         subplot_label_format: str | None = ...,
@@ -952,6 +954,7 @@ class Chi2(jaml.YAMLWrapper):
             ]
             | None
         ) = ...,
+        plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = ...,
         subplot_groupby: str | None = ...,
         subplot_label: Literal["legend"] | None = ...,
         subplot_label_format: str | None = ...,
@@ -1077,7 +1080,7 @@ class Chi2(jaml.YAMLWrapper):
         xscale: str | None = None,
         yscale: str | None = None,
         title: str | None = None,
-        legend: LegendPos = "upper right",
+        legend: LegendPos = "upper left",
         curve_label: (
             Literal[
                 "annotate above",
@@ -1087,11 +1090,12 @@ class Chi2(jaml.YAMLWrapper):
             ]
             | None
         ) = "ticks",
+        plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = ["absolute"],
         subplot_groupby: str | None = None,
         subplot_label: Literal["legend"] | None = None,
         subplot_label_format: str | None = None,
         chi2_annotation: bool = True,
-        chi2_legend: LegendPos = "upper right",
+        chi2_legend: LegendPos = "upper left",
         curve_groupby: str | list[str] | Literal["fallback"] | None = "fallback",
         apply_normalization: bool = True,
         shift_correlated: Literal["data", "theory"] | None = "theory",
@@ -1128,6 +1132,7 @@ class Chi2(jaml.YAMLWrapper):
             title=title,
             legend=legend,
             curve_label=curve_label,
+            plot_types=plot_types,
             subplot_groupby=subplot_groupby,
             subplot_label=subplot_label,
             subplot_label_format=subplot_label_format,
@@ -1177,7 +1182,7 @@ class Chi2(jaml.YAMLWrapper):
         xscale: str | None = None,
         yscale: str | None = None,
         title: str | None = None,
-        legend: LegendPos = "upper right",
+        legend: LegendPos = "upper left",
         curve_label: (
             Literal[
                 "annotate above",
@@ -1187,12 +1192,12 @@ class Chi2(jaml.YAMLWrapper):
             ]
             | None
         ) = "ticks",
-        types: DataVsTheoryType | SequenceNotStr[DataVsTheoryType] = ["absolute"],
+        plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = ["absolute"],
         subplot_groupby: str | None = None,
         subplot_label: Literal["legend"] | None = None,
         subplot_label_format: str | None = None,
         chi2_annotation: bool = True,
-        chi2_legend: LegendPos = "upper right",
+        chi2_legend: LegendPos = "upper left",
         curve_groupby: str | list[str] | Literal["fallback"] | None = "fallback",
         apply_normalization: bool = True,
         shift_correlated: Literal["data", "theory"] | None = "theory",
@@ -1249,8 +1254,8 @@ class Chi2(jaml.YAMLWrapper):
                     "Please provide datasets that are each of the same type_experiment"
                 )
 
-        if isinstance(types, str):
-            types = [types]
+        if isinstance(plot_types, str):
+            plot_types = [plot_types]
 
         # group the relevant dataset IDs so we get one dataset per figure
         fig_gb = points.query("id_dataset in @id_dataset").groupby(
@@ -1273,16 +1278,16 @@ class Chi2(jaml.YAMLWrapper):
 
             kwargs_subplots_default = {
                 "sharex": True,
-                "sharey": True,
-                "unit_shape": (len(types), 1),
-                "unit_height_ratios": [(2 if t == "absolute" else 1) for t in types],
+                "sharey": "row",
+                "unit_shape": (len(plot_types), 1),
+                "unit_height_ratios": [(2 if t == "absolute" else 1) for t in plot_types],
                 "layout": "constrained",
             }
             kwargs_subplots_updated = util.update_kwargs(
                 kwargs_subplots_default, kwargs_subplots, i
             )
 
-            n_real = len(types) if subplot_gb is None else len(subplot_gb) * len(types)
+            n_real = len(plot_types) if subplot_gb is None else len(subplot_gb) * len(plot_types)
 
             ax_grid = AxesGrid(n_real=n_real, **kwargs_subplots_updated)
 
@@ -1357,6 +1362,7 @@ class Chi2(jaml.YAMLWrapper):
                     legend=legend is not None
                     and ax_grid.locate_ax(legend) == ax_i[0, 0],  # FIXME
                     curve_label=curve_label,
+                    plot_types=plot_types,
                     # subplot_label=subplot_label,
                     subplot_label_format=subplot_label_format,
                     chi2_annotation=chi2_annotation,
@@ -1446,7 +1452,7 @@ class Chi2(jaml.YAMLWrapper):
         xscale: str | None = None,
         yscale: str | None = None,
         title: str | None = None,
-        legend: bool = True,
+        legend: LegendPos = "upper left",
         curve_label: (
             Literal[
                 "annotate above",
@@ -1456,11 +1462,12 @@ class Chi2(jaml.YAMLWrapper):
             ]
             | None
         ) = "ticks",
+        plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = "absolute",
         subplot_groupby: str | None = None,
         subplot_label: Literal["legend"] | None = "legend",
         subplot_label_format: str | None = None,
         chi2_annotation: bool = True,
-        chi2_legend: bool = True,
+        chi2_legend: LegendPos = "upper left",
         curve_groupby: str | list[str] | Literal["fallback"] | None = "fallback",
         apply_normalization: bool = True,
         theory_min_width: float = 0.06,
@@ -1478,6 +1485,7 @@ class Chi2(jaml.YAMLWrapper):
         kwargs_legend: dict[str, Any] = {},
         kwargs_legend_chi2: dict[str, Any] = {},
         kwargs_legend_curves: dict[str, Any] = {},
+        kwargs_legend_subplots: dict[str, Any] | list[dict[str, Any] | None] = {},
         kwargs_ticks_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
         kwargs_annotate_chi2: dict[str, Any] = {},
         kwargs_annotate_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
@@ -1595,28 +1603,56 @@ class Chi2(jaml.YAMLWrapper):
                     "Please provide datasets that are each of the same type_experiment"
                 )
 
+        if isinstance(plot_types, str):
+            plot_types = [plot_types]
+
         subplot_gb = (
             points.groupby(subplot_groupby) if subplot_groupby is not None else None
         )
 
-        kwargs_suplots_default = {
+        kwargs_subplots_default = {
             "sharex": True,
-            "sharey": True,
+            "sharey": "row",
+            "unit_shape": (len(plot_types), 1),
+            "unit_height_ratios": [(2 if t == "absolute" else 1) for t in plot_types],
+            "layout": "constrained",
         }
         kwargs_subplots_updated = util.update_kwargs(
-            kwargs_suplots_default, kwargs_subplots
+            kwargs_subplots_default, kwargs_subplots
         )
 
-        ax_grid = AxesGrid(
-            len(subplot_gb) if subplot_gb is not None else 1, **kwargs_subplots_updated
-        )
+        n_real = len(plot_types) if subplot_gb is None else len(subplot_gb) * len(plot_types)
+
+        ax_grid = AxesGrid(n_real=n_real, **kwargs_subplots_updated)
+
+        if chi2_legend is not None:
+            ax_legend_chi2 = ax_grid.locate_ax(chi2_legend)
+            kwargs_legend_chi2_default = {
+                "order": 0,
+                "parent": ax_legend_chi2,
+                "handles": [Patch(), Patch(), Patch()],
+                "labels": [
+                    f"$N_{{\\text{{points}}}} = {self.num_points[id_dataset].sum()}$",
+                    f"$\\chi^2_{{\\text{{total}}}} = {self.minimum_value_per_data[id_dataset].sum():.3f}$",
+                    f"$\\chi^2_{{\\text{{total}}}}\\,/\\, N_{{\\text{{points}}}} = {self.minimum_value_per_data[id_dataset].sum() / self.num_points[id_dataset].sum():.3f}$",
+                ],
+                "labelspacing": 0,
+                "handlelength": 0,
+                "handleheight": 0,
+                "handletextpad": 0,
+            }
+            kwargs_legend_chi2_updated = util.update_kwargs(
+                kwargs_legend_chi2_default, kwargs_legend_chi2
+            )
+
+            ax_legend_chi2.add_artist(AdditionalLegend(**kwargs_legend_chi2_updated))
 
         ax_iter = zip(
-            ax_grid.ax_real.flatten(),
+            ax_grid.ax_unit_real,
             (subplot_gb if subplot_gb is not None else [(np.nan, points)]),
         )
 
-        for ax_i, (_, points_i) in ax_iter:
+        for i, (ax_i, (_, points_i)) in enumerate(ax_iter):
 
             if subplot_groupby is not None and subplot_label_format is None:
                 subplot_label_format_i = (
@@ -1633,19 +1669,21 @@ class Chi2(jaml.YAMLWrapper):
             data_vs_theory.plot(
                 type_experiment=type_experiment,
                 points=points_i,
-                ax=ax_i,
+                ax=ax_i[:, 0],
                 x_variable=x_variable,
                 xlabel=xlabel,
                 ylabel=ylabel,
                 xscale=xscale,
                 yscale=yscale,
                 title=title,
-                legend=legend,
+                legend=legend is not None
+                and ax_grid.locate_ax(legend) == ax_i[0, 0],  # FIXME
                 curve_label=curve_label,
+                plot_types=plot_types,
                 subplot_label=subplot_label if subplot_groupby is not None else None,
                 subplot_label_format=subplot_label_format_i,
                 chi2_annotation=chi2_annotation,
-                chi2_legend=chi2_legend,
+                chi2_legend=False,
                 curve_groupby=curve_groupby,
                 apply_normalization=apply_normalization,
                 theory_min_width=theory_min_width,
@@ -1662,6 +1700,7 @@ class Chi2(jaml.YAMLWrapper):
                 kwargs_legend=kwargs_legend,
                 kwargs_legend_chi2=kwargs_legend_chi2,
                 kwargs_legend_curves=kwargs_legend_curves,
+                kwargs_legend_subplots=util.get_kwargs(kwargs_legend_subplots, i),
                 kwargs_ticks_curves=kwargs_ticks_curves,
                 kwargs_annotate_chi2=kwargs_annotate_chi2,
                 kwargs_annotate_curves=kwargs_annotate_curves,

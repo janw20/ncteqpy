@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import logging
 from itertools import zip_longest
 
 import matplotlib.artist as martist
 import matplotlib.pyplot as plt
 import matplotlib.transforms as mtransforms
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from matplotlib.container import ErrorbarContainer
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from pandas.core.groupby import DataFrameGroupBy
-from typing_extensions import Any, Literal, Sequence, cast
+from typing_extensions import Any, Literal, Sequence, cast, overload
 
+from ncteqpy._typing import SequenceNotStr
 import ncteqpy.labels as nc_labels
 from ncteqpy.plot.util import AdditionalLegend
 from ncteqpy.util import update_kwargs
@@ -29,7 +32,12 @@ def plot(
     ],
     x_variable: str | list[str] | Literal["fallback"] | None = "fallback",
     xlabel: str | dict[str, str] | Literal["fallback"] | None = "fallback",
-    ylabel: str | Literal["fallback"] | None = "fallback",
+    ylabel: (
+        str
+        | Literal["fallback"]
+        | None
+        | SequenceNotStr[str | Literal["fallback"] | None]
+    ) = "fallback",
     xscale: str | None = None,
     yscale: str | None = None,
     title: str | None = None,
@@ -64,6 +72,7 @@ def plot(
     kwargs_legend: dict[str, Any] = {},
     kwargs_legend_chi2: dict[str, Any] = {},
     kwargs_legend_curves: dict[str, Any] = {},
+    kwargs_legend_subplots: dict[str, Any] = {},
     kwargs_ticks_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
     kwargs_annotate_chi2: dict[str, Any] = {},
     kwargs_annotate_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
@@ -267,6 +276,7 @@ def plot(
         kwargs_legend=kwargs_legend,
         kwargs_legend_chi2=kwargs_legend_chi2,
         kwargs_legend_curves=kwargs_legend_curves,
+        kwargs_legend_subplots=kwargs_legend_subplots,
         kwargs_ticks_curves=kwargs_ticks_curves,
         kwargs_annotate_chi2=kwargs_annotate_chi2,
         kwargs_annotate_curves=kwargs_annotate_curves,
@@ -282,7 +292,12 @@ def plot_common(
         "absolute",
     ],
     xlabel: str | None = None,
-    ylabel: str | None = None,
+    ylabel: (
+        str
+        | Literal["fallback"]
+        | None
+        | SequenceNotStr[str | Literal["fallback"] | None]
+    ) = None,
     xscale: str | None = None,
     yscale: str | None = None,
     title: str | None = None,
@@ -317,6 +332,7 @@ def plot_common(
     kwargs_legend: dict[str, Any] = {},
     kwargs_legend_chi2: dict[str, Any] = {},
     kwargs_legend_curves: dict[str, Any] = {},
+    kwargs_legend_subplots: dict[str, Any] = {},
     kwargs_ticks_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
     kwargs_annotate_chi2: dict[str, Any] = {},
     kwargs_annotate_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
@@ -447,6 +463,7 @@ def plot_common(
                 theory_min_width=theory_min_width,
                 plot_pdf_uncertainty=plot_pdf_uncertainty,
                 pdf_uncertainty_convention=pdf_uncertainty_convention,
+                plot_types=plot_types,
                 kwargs_theory=kwargs_theory,
                 kwargs_theory_unc=kwargs_theory_unc,
             )
@@ -468,10 +485,12 @@ def plot_common(
             ax=ax,
             points=points_i,
             x_col=x_variable,
+            theory_col=theory_column,
             index_curve=i,
             y_offset_add=y_offset_add,
             y_offset_mul=y_offset_mul,
             shift_correlated=(shift_correlated == "data"),
+            plot_types=plot_types,
             kwargs_data=kwargs_data_updated,
         )
 
@@ -489,6 +508,7 @@ def plot_common(
                 y_offset_add=y_offset_add,
                 y_offset_mul=y_offset_mul,
                 shift_correlated=(shift_correlated is not None),
+                plot_types=plot_types,
                 kwargs_annotate_chi2=kwargs_annotate_chi2,
             )
 
@@ -519,12 +539,17 @@ def plot_common(
     _set_labels(
         ax=ax,
         x_fallback=x_fallback,
-        y_fallback="",
+        y_fallback={
+            "absolute": "",
+            "data over theory": r"$\dfrac{\text{Data}}{\text{Theory}}$",
+            "theory over data": r"$\dfrac{\text{Theory}}{\text{Data}}$",
+        },
         x_label=xlabel,
         kwargs_xlabel=kwargs_xlabel,
         y_label=ylabel,
         kwargs_ylabel=kwargs_ylabel,
         title=title,
+        plot_types=plot_types,
         kwargs_title=kwargs_title,
     )
 
@@ -571,7 +596,7 @@ def plot_common(
                 "Either data or theory must be given if subplot_label is 'legend'"
             )
 
-        leg3 = AdditionalLegend(
+        kwargs_legend_subplots_default = dict(
             order=1,
             parent=ax[0],
             handles=[Patch()],
@@ -581,6 +606,11 @@ def plot_common(
             handleheight=0,
             handletextpad=0,
         )
+        kwargs_legend_subplots_updated = update_kwargs(
+            kwargs_legend_subplots_default, kwargs_legend_subplots
+        )
+
+        leg3 = AdditionalLegend(**kwargs_legend_subplots_updated)
         ax[0].add_artist(leg3)
 
     if xscale is not None:
@@ -626,97 +656,161 @@ def _plot_data(
     ax: plt.Axes | Sequence[plt.Axes],
     points: pd.DataFrame,
     x_col: str | list[str],
+    theory_col: str = "theory",
     index_curve: int = 0,
     num_curves: int = 1,
     y_offset_add: float | Sequence[float] = 0,
     y_offset_mul: float | Sequence[float] = 0,
     shift_correlated: bool = False,
     ratio_offset: bool = True,
-    types: DataVsTheoryType | Sequence[DataVsTheoryType] = [
+    plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = [
         "absolute",
         "theory over data",
     ],
     kwargs_data: dict[str, Any] | list[dict[str, Any] | None] = {},
 ) -> ErrorbarContainer | None:
 
-    ax, types, y_offset_add, y_offset_mul = _check_ax_offsets(
-        ax=ax, types=types, y_offset_add=y_offset_add, y_offset_mul=y_offset_mul
+    ax, plot_types, y_offset_add, y_offset_mul = _check_ax_offsets(
+        ax=ax, types=plot_types, y_offset_add=y_offset_add, y_offset_mul=y_offset_mul
     )
 
+    # print(ax, plot_types, y_offset_add, y_offset_mul)
+
+    res = None
+
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+
     if "data" in points:
-        offset_factors = 10 ** (np.array(y_offset_mul) * index_curve)
-        offset_summands = np.array(y_offset_add) * index_curve
+        for i, (ax_i, plot_type_i, y_offset_add_i, y_offset_mul_i) in enumerate(
+            zip(ax, plot_types, y_offset_add, y_offset_mul)
+        ):
+            # print(i)
+            offset_factor = 10 ** (np.array(y_offset_mul_i) * index_curve)
+            offset_summand = np.array(y_offset_add_i) * index_curve
 
-        kwargs_data_default: dict[str, Any] = {
-            "capsize": 1.7,
-            "marker": ".",
-            "markersize": 7,
-            "ls": "",
-            "color": "black",
-        }
+            kwargs_data_default: dict[str, Any] = {
+                "capsize": 1.7,
+                "marker": ".",
+                "markersize": 7,
+                "ls": "",
+                "color": "black",
+                "markerfacecolor": colors[index_curve % len(colors)],
+            }
 
-        if isinstance(x_col, list):
-            xerr = (points[x_col[1]] - points[x_col[0]]) / 2
-            kwargs_data_default["xerr"] = (xerr,)
-        else:
-            xerr = None
+            if isinstance(x_col, list):
+                xerr = (points[x_col[1]] - points[x_col[0]]) / 2
+                kwargs_data_default["xerr"] = (xerr,)
+            else:
+                xerr = None
 
-        if "unc_tot" in points:
-            kwargs_data_default["yerr"] = points["unc_tot"] * offset_factors[0]
+            points_data = (
+                points["data"] - points["shift_correlated"]
+                if shift_correlated and "shift_correlated" in points
+                else points["data"]
+            )
 
-        kwargs_data_updated = update_kwargs(
-            kwargs_data_default, kwargs_data, index_curve
-        )
-
-        x = points[x_col].mean(axis=1) if isinstance(x_col, list) else points[x_col]
-
-        y = (
-            points["data"] - points["shift_correlated"]
-            if shift_correlated and "shift_correlated" in points
-            else points["data"]
-        )
-
-        e = ax[0].errorbar(
-            x,
-            y * offset_factors[0] + offset_summands[0],
-            **kwargs_data_updated,
-        )
-
-        e.lines[0].set_markeredgewidth(0.4)
-
-        if len(ax) >= 2:
             if "unc_tot" in points:
-                kwargs_data_updated["yerr"] = points["unc_tot"] / y
+                kwargs_data_default["yerr"] = (
+                    _calculate_ratio(
+                        plot_type_i, points["unc_tot"], points_data, points[theory_col]
+                    )
+                    * offset_factor
+                )
 
-            # TODO: make ratio_offset work if x_col is not a list, i.e. when not plotting a binned distribution
-            # if xerr is not None:
-            #     x_offsets = (
-            #         1.9 * xerr * (1 / (num_curves + 1) * (index_curve + 0.5) - 0.5)
-            #     )
-            #     x += x_offsets
+            x = points[x_col].mean(axis=1) if isinstance(x_col, list) else points[x_col]
 
-            colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+            y = _calculate_ratio(
+                plot_type_i, points_data, points_data, points[theory_col]
+            )
 
-            kwargs_data_updated["markerfacecolor"] = colors[index_curve % len(colors)]
-            kwargs_data_updated["markeredgecolor"] = kwargs_data_updated[
-                "markerfacecolor"
-            ]
-            # kwargs_data_updated.pop("xerr")
-            ax[1].errorbar(
+            kwargs_data_updated = update_kwargs(
+                kwargs_data_default, kwargs_data, index_curve
+            )
+
+            e = ax_i.errorbar(
                 x,
-                y / y * offset_factors[1] + offset_summands[1],
+                y * offset_factor + offset_summand,
                 **kwargs_data_updated,
             )
 
-        return e
+            e.lines[0].set_markeredgewidth(0.4)
+
+            if i == 0:
+                res = e
+
+            # if len(ax) >= 2:
+            #     if "unc_tot" in points:
+            #         kwargs_data_updated["yerr"] = points["unc_tot"] / y
+
+            #     # TODO: make ratio_offset work if x_col is not a list, i.e. when not plotting a binned distribution
+            #     # if xerr is not None:
+            #     #     x_offsets = (
+            #     #         1.9 * xerr * (1 / (num_curves + 1) * (index_curve + 0.5) - 0.5)
+            #     #     )
+            #     #     x += x_offsets
+
+            #     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+
+            #     kwargs_data_updated["markerfacecolor"] = colors[
+            #         index_curve % len(colors)
+            #     ]
+            #     kwargs_data_updated["markeredgecolor"] = kwargs_data_updated[
+            #         "markerfacecolor"
+            #     ]
+            #     # kwargs_data_updated.pop("xerr")
+            #     ax[1].errorbar(
+            #         x,
+            #         y / y * offset_factors[1] + offset_summands[1],
+            #         **kwargs_data_updated,
+            #     )
+
+    return res
+
+
+@overload
+def _calculate_ratio(
+    plot_type: Literal["absolute", "data over theory", "theory over data"],
+    numerator: pd.Series[float],
+    data: pd.Series[float] | None,
+    theory: pd.Series[float] | None,
+) -> pd.Series[float]: ...
+
+
+@overload
+def _calculate_ratio(
+    plot_type: Literal["absolute", "data over theory", "theory over data"],
+    numerator: npt.NDArray[np.float64],
+    data: npt.NDArray[np.float64] | None,
+    theory: npt.NDArray[np.float64] | None,
+) -> npt.NDArray[np.float64]: ...
+
+
+def _calculate_ratio(
+    plot_type: Literal["absolute", "data over theory", "theory over data"],
+    numerator: pd.Series[float] | npt.NDArray[np.float64],
+    data: pd.Series[float] | npt.NDArray[np.float64] | None,
+    theory: pd.Series[float] | npt.NDArray[np.float64] | None,
+) -> pd.Series[float] | npt.NDArray[np.float64]:
+    if plot_type == "absolute":
+        return numerator
+    elif plot_type == "data over theory":
+        if theory is not None:
+            return numerator / theory
+        else:
+            raise ValueError(f"plot_type is '{plot_type}' but theory is None")
+    elif plot_type == "theory over data":
+        if data is not None:
+            return numerator / data
+        else:
+            raise ValueError(f"plot_type is '{plot_type}' but data is None")
     else:
-        return None
+        raise ValueError(f"Unknown plot_type {plot_type}")
 
 
 def _plot_theory(
     ax: plt.Axes | Sequence[plt.Axes],
     points: pd.DataFrame,
-    x_col: str | list[str],
+    x_col: str | SequenceNotStr[str],
     y_col: str = "theory",
     index_curve: int = 0,
     y_offset_add: float | Sequence[float] = 0,
@@ -725,165 +819,186 @@ def _plot_theory(
     theory_min_width: float = 0.06,
     plot_pdf_uncertainty: bool = True,
     pdf_uncertainty_convention: Literal["sym", "asym"] = "asym",
-    types: DataVsTheoryType | Sequence[DataVsTheoryType] = [
+    plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = [
         "absolute",
         "theory over data",
     ],
     kwargs_theory: dict[str, Any] | list[dict[str, Any] | None] = {},
     kwargs_theory_unc: dict[str, Any] | list[dict[str, Any] | None] = {},
 ) -> Line2D | None:
-    ax, types, y_offset_add, y_offset_mul = _check_ax_offsets(
-        ax, types, y_offset_add, y_offset_mul
+    ax, plot_types, y_offset_add, y_offset_mul = _check_ax_offsets(
+        ax, plot_types, y_offset_add, y_offset_mul
     )
 
-    plot_binned = isinstance(x_col, list)
+    plot_binned = not isinstance(x_col, str)
+
+    res = None
 
     if y_col in points:
-        offset_factors = 10 ** (np.array(y_offset_mul) * index_curve)
-        offset_summands = np.array(y_offset_add) * index_curve
+        for i, (ax_i, plot_type_i, y_offset_add_i, y_offset_mul_i) in enumerate(
+            zip(ax, plot_types, y_offset_add, y_offset_mul)
+        ):
+            offset_factor = 10 ** (y_offset_mul_i * index_curve)
+            offset_summand = y_offset_add_i * index_curve
 
-        kwargs_theory_default = {}
+            kwargs_theory_default = {}
 
-        # for nan values in points[y_col] we fall back to "theory"
-        y = points[y_col].fillna(points["theory"], inplace=False).to_numpy()
-
-        if shift_correlated and "shift_correlated" in points:
-            y += points["shift_correlated"].fillna(0.0).to_numpy()
-
-        if plot_binned:
-            x_min = points[x_col[0]].to_numpy()
-            x_max = points[x_col[1]].to_numpy()
-
-            x = np.append(x_min, x_max[-1])
-            y = np.append(y, y[-1])
-            kwargs_theory_default["drawstyle"] = "steps-post"
-
-            gaps = np.flatnonzero(x_min[1:] != x_max[:-1])
-            for i_gap in reversed(gaps):
-                x = np.insert(x, i_gap + 1, [x_max[i_gap], np.nan])
-                y = np.insert(y, i_gap + 1, [y[i_gap], np.nan])
-        else:
-            x = points[x_col].to_numpy()
-
-        # add some padding if otherwise the point would not be visible
-        if not plot_binned and x.size == 1:
-            transforms = [
-                (
-                    mtransforms.blended_transform_factory(
-                        # fmt: off
-                        mtransforms.ScaledTranslation(
-                            x[0], 0, ax_i.transScale + ax_i.transLimits  # pyright: ignore[reportAttributeAccessIssue]
-                        )
-                        # fmt: on
-                        + ax_i.transAxes,
-                        ax_i.transData,
-                    )
-                )
-                for ax_i in ax
-            ]
-            x = np.array([-theory_min_width / 2, theory_min_width / 2])
-            y = y.repeat(2)
-        else:
-            transforms = None
-
-        if transforms is not None:
-            kwargs_theory_default["transform"] = transforms[0]  # FIXME for ratio plot
-
-        kwargs_theory_updated = update_kwargs(
-            kwargs_theory_default, kwargs_theory, index_curve
-        )
-
-        l = ax[0].plot(
-            x,
-            y * offset_factors[0] + offset_summands[0],
-            **kwargs_theory_updated,
-        )
-
-        plot_ratio = len(ax) >= 2 and "data" in points
-
-        if plot_ratio:
-
-            y_denom = (
-                np.append(points["data"], points["data"].iloc[-1])
-                if isinstance(x_col, list)
-                else points["data"].to_numpy()
+            # for nan values in points[y_col] we fall back to "theory"
+            points_theory = (
+                points[y_col].fillna(points["theory"], inplace=False).to_numpy()
             )
 
-            ax[1].plot(
+            if shift_correlated and "shift_correlated" in points:
+                points_theory += points["shift_correlated"].fillna(0.0).to_numpy()
+
+            points_data = points["data"].to_numpy() if "data" in points else None
+            y = _calculate_ratio(plot_type_i, points_theory, points_data, points_theory)
+
+            if plot_binned:
+                x_min = points[x_col[0]].to_numpy()
+                x_max = points[x_col[1]].to_numpy()
+
+                x = np.append(x_min, x_max[-1])
+                y = np.append(y, y[-1])
+                kwargs_theory_default["drawstyle"] = "steps-post"
+
+                gaps = np.flatnonzero(x_min[1:] != x_max[:-1])
+                for i_gap in reversed(gaps):
+                    x = np.insert(x, i_gap + 1, [x_max[i_gap], np.nan])
+                    y = np.insert(
+                        y, i_gap + 1, [y[i_gap], np.nan]
+                    )
+            else:
+                x = points[x_col].to_numpy()
+
+            # add some padding if otherwise the point would not be visible
+            if not plot_binned and x.size == 1:
+                transform = mtransforms.blended_transform_factory(
+                    # fmt: off
+                            mtransforms.ScaledTranslation(
+                                x[0], 0, ax_i.transScale + ax_i.transLimits  # pyright: ignore[reportAttributeAccessIssue]
+                            )
+                    # fmt: on
+                    + ax_i.transAxes,
+                    ax_i.transData,
+                )
+                kwargs_theory_default["transform"] = transform
+                x = np.array([-theory_min_width / 2, theory_min_width / 2])
+                y = y.repeat(2)
+            else:
+                transform = None
+
+            # if transforms is not None:
+            #     kwargs_theory_default["transform"] = transforms[0]  # FIXME for ratio plot
+
+            kwargs_theory_updated = update_kwargs(
+                kwargs_theory_default, kwargs_theory, index_curve
+            )
+
+            l = ax_i.plot(
                 x,
-                y / y_denom * offset_factors[1] + offset_summands[1],
+                y * offset_factor + offset_summand,
                 **kwargs_theory_updated,
             )
 
-        if plot_pdf_uncertainty:
-            kwargs_theory_unc_default = {
-                "alpha": 0.5,
-                "facecolor": l[0].get_color(),
-                "edgecolor": None,
-                "lw": 0,
-            }
+            if i == 0:
+                res = l[0]
 
-            if transforms is not None:
-                kwargs_theory_unc_default["transform"] = transforms[0]
+            # plot_ratio = len(ax) >= 2 and "data" in points
 
-            if plot_binned:
-                kwargs_theory_unc_default["step"] = "post"
+            # if plot_ratio:
 
-            kwargs_theory_unc_updated = update_kwargs(
-                kwargs_theory_unc_default,
-                kwargs_theory_unc,
-                index_curve,
-            )
+            #     y_denom = (
+            #         np.append(points["data"], points["data"].iloc[-1])
+            #         if isinstance(x_col, list)
+            #         else points["data"].to_numpy()
+            #     )
 
-            if pdf_uncertainty_convention == "sym" and "theory_pdf_unc_sym" in points:
-                y_pdf_unc_lower = points["theory_pdf_unc_sym"].to_numpy()
-                y_pdf_unc_upper = y_pdf_unc_lower
-            elif (
-                pdf_uncertainty_convention == "asym"
-                and "theory_pdf_unc_asym_lower" in points
-                and "theory_pdf_unc_asym_upper" in points
-            ):
-                y_pdf_unc_lower = points["theory_pdf_unc_asym_lower"].to_numpy()
-                y_pdf_unc_upper = points["theory_pdf_unc_asym_upper"].to_numpy()
-            else:
-                y_pdf_unc_upper = np.ones(points[y_col].size) * np.nan
-                y_pdf_unc_lower = y_pdf_unc_upper
+            #     ax[1].plot(
+            #         x,
+            #         y / y_denom * offset_factor[1] + offset_summand[1],
+            #         **kwargs_theory_updated,
+            #     )
 
-            if plot_binned:
-                y_pdf_unc_lower = np.append(y_pdf_unc_lower, y_pdf_unc_lower[-1])
-                y_pdf_unc_upper = np.append(y_pdf_unc_upper, y_pdf_unc_upper[-1])
+            if plot_pdf_uncertainty:
+                kwargs_theory_unc_default = {
+                    "alpha": 0.5,
+                    "facecolor": l[0].get_color(),
+                    "edgecolor": None,
+                    "lw": 0,
+                }
+
+                if transform is not None:
+                    kwargs_theory_unc_default["transform"] = transform
+
+                if plot_binned:
+                    kwargs_theory_unc_default["step"] = "post"
+
+                kwargs_theory_unc_updated = update_kwargs(
+                    kwargs_theory_unc_default,
+                    kwargs_theory_unc,
+                    index_curve,
+                )
+
+                if (
+                    pdf_uncertainty_convention == "sym"
+                    and "theory_pdf_unc_sym" in points
+                ):
+                    y_pdf_unc_lower = points["theory_pdf_unc_sym"].to_numpy()
+                    y_pdf_unc_upper = y_pdf_unc_lower
+                elif (
+                    pdf_uncertainty_convention == "asym"
+                    and "theory_pdf_unc_asym_lower" in points
+                    and "theory_pdf_unc_asym_upper" in points
+                ):
+                    y_pdf_unc_lower = points["theory_pdf_unc_asym_lower"].to_numpy()
+                    y_pdf_unc_upper = points["theory_pdf_unc_asym_upper"].to_numpy()
+                else:
+                    y_pdf_unc_upper = np.ones(points[y_col].size) * np.nan
+                    y_pdf_unc_lower = y_pdf_unc_upper
+
+                y_pdf_unc_lower = _calculate_ratio(
+                    plot_type_i, y_pdf_unc_lower, points_data, points_theory
+                )
+                y_pdf_unc_lower = _calculate_ratio(
+                    plot_type_i, y_pdf_unc_lower, points_data, points_theory
+                )
+
+                if plot_binned:
+                    y_pdf_unc_lower = np.append(y_pdf_unc_lower, y_pdf_unc_lower[-1])
+                    y_pdf_unc_upper = np.append(y_pdf_unc_upper, y_pdf_unc_upper[-1])
+
+                    # fmt: off
+                    for i_gap in reversed(gaps):  # pyright: ignore[reportPossiblyUnboundVariable]
+                    # fmt: on
+                        i_gap: int
+                        y_pdf_unc_lower = np.insert(
+                            y_pdf_unc_lower, i_gap + 1, [y_pdf_unc_lower[i_gap], np.nan]
+                        )
+                        y_pdf_unc_upper = np.insert(
+                            y_pdf_unc_upper, i_gap + 1, [y_pdf_unc_upper[i_gap], np.nan]
+                        )
 
                 # fmt: off
-                for i_gap in reversed(gaps):  # pyright: ignore[reportPossiblyUnboundVariable]
-                # fmt: on
-                    i_gap: int
-                    y_pdf_unc_lower = np.insert(
-                        y_pdf_unc_lower, i_gap + 1, [y_pdf_unc_lower[i_gap], np.nan]
-                    )
-                    y_pdf_unc_upper = np.insert(
-                        y_pdf_unc_upper, i_gap + 1, [y_pdf_unc_upper[i_gap], np.nan]
-                    )
-
-            # fmt: off
-            ax[0].fill_between(
-                x,
-                (y + y_pdf_unc_lower) * offset_factors[0] + offset_summands[0],  # pyright: ignore[reportArgumentType]
-                (y - y_pdf_unc_lower) * offset_factors[0] + offset_summands[0],  # pyright: ignore[reportArgumentType]
-                **kwargs_theory_unc_updated,
-            )
-            # fmt: on
-
-            if plot_ratio:
-                # fmt: off
-                ax[1].fill_between(
+                ax_i.fill_between(
                     x,
-                    (y + y_pdf_unc_lower) / y_denom * offset_factors[1] + offset_summands[1], # pyright: ignore[reportArgumentType,reportPossiblyUnboundVariable]
-                    (y - y_pdf_unc_lower) / y_denom * offset_factors[1] + offset_summands[1], # pyright: ignore[reportArgumentType,reportPossiblyUnboundVariable]
+                    (y + y_pdf_unc_lower) * offset_factor + offset_summand,  # pyright: ignore[reportArgumentType]
+                    (y - y_pdf_unc_lower) * offset_factor + offset_summand,  # pyright: ignore[reportArgumentType]
                     **kwargs_theory_unc_updated,
                 )
                 # fmt: on
 
-        return l[0]
+                # if plot_ratio:
+                #     # fmt: off
+                #     ax[1].fill_between(
+                #         x,
+                #         (y + y_pdf_unc_lower) / y_denom * offset_factor[1] + offset_summand[1], # pyright: ignore[reportArgumentType,reportPossiblyUnboundVariable]
+                #         (y - y_pdf_unc_lower) / y_denom * offset_factor[1] + offset_summand[1], # pyright: ignore[reportArgumentType,reportPossiblyUnboundVariable]
+                #         **kwargs_theory_unc_updated,
+                #     )
+                #     # fmt: on
+
+    return res
 
 
 def _annotate_chi2(
@@ -896,47 +1011,28 @@ def _annotate_chi2(
     y_offset_mul: float | Sequence[float] = 0,
     shift_correlated: bool = True,
     pdf_uncertainty_convention: Literal["sym", "asym"] = "asym",
-    types: DataVsTheoryType | Sequence[DataVsTheoryType] = [
+    plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = [
         "absolute",
         "theory over data",
     ],
     kwargs_annotate_chi2: dict[str, Any] = {},
 ) -> None:
-    ax, types, y_offset_add, y_offset_mul = _check_ax_offsets(
-        ax, types, y_offset_add, y_offset_mul
+    ax, plot_types, y_offset_add, y_offset_mul = _check_ax_offsets(
+        ax, plot_types, y_offset_add, y_offset_mul
     )
 
     positions = []
 
-    if y_col in points:
-        pos_theory = points[y_col]
-
-        # if pdf_uncertainty_convention == "sym" and f"{y_col}_pdf_unc_sym" in points:
-        #     pos_theory = pos_theory.add(points[f"{y_col}_pdf_unc_sym"], fill_value=0)
-        # elif (
-        #     pdf_uncertainty_convention == "asym"
-        #     and f"{y_col}_pdf_unc_asym_upper" in points
-        # ):
-        #     pos_theory = pos_theory.add(
-        #         points[f"{y_col}_pdf_unc_asym_upper"], fill_value=0
-        #     )
-
-        positions.append(pos_theory)
-
-    chi2_col = (
-        "chi2_shifted" if shift_correlated and "chi2_shifted" in points else "chi2"
-    )
-
-    if "data" in points:
-        pos_data = points["data"]
-
-        if "unc_tot" in points:
-            pos_data = pos_data.add(points["unc_tot"], fill_value=0)
-
-        positions.append(pos_data)
-
-    if not positions:
-        positions.append(np.zeros(points[chi2_col].size))
+    if shift_correlated:
+        if "chi2_shifted" in points:
+            chi2_col = "chi2_shifted"
+        else:
+            # logging.warning(
+            #     "shift_correlated is True, but 'chi2_shifted' not in points"
+            # )
+            chi2_col = "chi2"
+    else:
+        chi2_col = "chi2"
 
     kwargs_annotate_default = {
         "xytext": (0, 0.3),
@@ -950,9 +1046,48 @@ def _annotate_chi2(
 
     x = points[x_col].mean(axis=1) if isinstance(x_col, list) else points[x_col]
 
-    for i, (ax_i, y_offset_add_i, y_offset_mul_i) in enumerate(
-        zip(ax, y_offset_add, y_offset_mul)
+    for i, (ax_i, plot_type_i, y_offset_add_i, y_offset_mul_i) in enumerate(
+        zip(ax, plot_types, y_offset_add, y_offset_mul)
     ):
+        positions = []
+
+        if y_col in points:
+            pos_theory = _calculate_ratio(
+                plot_type_i,
+                points[y_col],
+                points["data"] if "data" in points else None,
+                points[y_col],
+            )
+
+            # if pdf_uncertainty_convention == "sym" and f"{y_col}_pdf_unc_sym" in points:
+            #     pos_theory = pos_theory.add(points[f"{y_col}_pdf_unc_sym"], fill_value=0)
+            # elif (
+            #     pdf_uncertainty_convention == "asym"
+            #     and f"{y_col}_pdf_unc_asym_upper" in points
+            # ):
+            #     pos_theory = pos_theory.add(
+            #         points[f"{y_col}_pdf_unc_asym_upper"], fill_value=0
+            #     )
+
+            positions.append(pos_theory)
+
+        if "data" in points:
+            pos_data = points["data"]
+
+            if "unc_tot" in points:
+                pos_data = pos_data.add(points["unc_tot"], fill_value=0)
+
+            pos_data = _calculate_ratio(
+                plot_type_i,
+                pos_data,
+                points["data"],
+                points[y_col] if y_col in points else None,
+            )
+
+            positions.append(pos_data)
+
+        if not positions:
+            positions.append(np.zeros(points[chi2_col].size))
 
         offset_factor = 10 ** (y_offset_mul_i * index_curve)
         offset_summand = y_offset_add_i * index_curve
@@ -1161,20 +1296,24 @@ def _format_curve_label(
 def _set_labels(
     ax: plt.Axes | Sequence[plt.Axes],
     x_fallback: str,
-    y_fallback: str,
-    y_ratio_fallback: str = r"$\dfrac{\rm Theory}{\rm Data}$",
+    y_fallback: dict[DataVsTheoryType, str],
+    # y_ratio_fallback: str = r"$\dfrac{\rm Theory}{\rm Data}$",
     x_label: Literal["fallback"] | str | None = "fallback",
-    y_label: Literal["fallback"] | str | None = "fallback",
-    y_ratio_label: Literal["fallback"] | str | None = "fallback",
+    y_label: (
+        Literal["fallback"]
+        | str
+        | None
+        | SequenceNotStr[Literal["fallback"] | str | None]
+    ) = "fallback",
+    plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = [
+        "absolute",
+        "theory over data",
+    ],
     title: str | None = None,
     kwargs_xlabel: dict[str, Any] = {},
     kwargs_ylabel: dict[str, Any] = {},
     kwargs_ylabel_ratio: dict[str, Any] = {},
     kwargs_title: dict[str, Any] = {},
-    types: DataVsTheoryType | Sequence[DataVsTheoryType] = [
-        "absolute",
-        "theory over data",
-    ],
 ) -> None:
     if isinstance(ax, plt.Axes):
         ax = [ax]
@@ -1186,16 +1325,16 @@ def _set_labels(
         ax[-1].set_xlabel(x_label, **kwargs_xlabel)
 
     if y_label is not None:
-        if y_label == "fallback":
-            y_label = y_fallback
+        y_label = [y_label] if isinstance(y_label, str) else list(y_label)
 
-        ax[0].set_ylabel(y_label, **kwargs_ylabel)
+        y_label.extend(["fallback"] * max(len(ax) - len(y_label), 0))
 
-    if y_ratio_label is not None and len(ax) > 1:
-        if y_ratio_label == "fallback":
-            y_ratio_label = y_ratio_fallback
-
-        ax[1].set_ylabel(y_ratio_fallback, **kwargs_ylabel_ratio)
+        for ax_i, plot_type_i, y_label_i in zip(ax, plot_types, y_label):
+            if y_label_i is not None:
+                ax_i.set_ylabel(
+                    y_fallback[plot_type_i] if y_label_i == "fallback" else y_label_i,
+                    **kwargs_ylabel,
+                )
 
     if title is not None:
         kwargs_title_default = {"fontsize": "medium"}

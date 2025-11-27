@@ -38,6 +38,7 @@ class AxesGrid:
     _n_real: int
     _n_none: int
 
+    _unit_shape: tuple[int, int]
     _n_unit_rows: int
     _n_unit_cols: int
     _n_unit_real: int
@@ -172,19 +173,26 @@ class AxesGrid:
 
         self._fig = fig
         self._ax = np.atleast_2d(np.array(ax, copy=True))
-        self._ax_real = self._ax.flat[:-n_none] if n_none > 0 else self._ax.flatten()
-        self._ax_unit_real = self._ax_real.reshape((n_unit_real, unit_shape[0], unit_shape[1]))
+        
+        # self._ax_unit_real = self._ax_real.reshape((n_unit_real, unit_shape[0], unit_shape[1]))
+        self._ax_unit_real = np.array([self._ax[
+            i // n_unit_cols * unit_shape[0]:(i // n_unit_cols + 1) * unit_shape[0],
+            i % n_unit_cols * unit_shape[1]:(i % n_unit_cols + 1) * unit_shape[1]
+        ] for i in range(n_unit_real)])
 
         if isinstance(ax, np.ndarray):
             # remove the superfluous axes in the lower left corner
             if n_none > 0:
                 self._ax[-unit_shape[0] :, -n_unit_none * unit_shape[1] :] = None
 
+        self._ax_real = self._ax[self._ax != None].flatten()
+
         self._n_real = n_real
         self._n_none = n_none
         self._n_rows = n_rows
         self._n_cols = n_cols
 
+        self._unit_shape = unit_shape
         self._n_unit_real = n_unit_real
         self._n_unit_none = n_unit_none
         self._n_unit_rows = n_unit_rows
@@ -296,6 +304,11 @@ class AxesGrid:
     def sharey(self) -> bool:
         """True if ylabels and yticks are shared"""
         return self._sharey
+
+    @property
+    def unit_shape(self) -> tuple[int, int]:
+        """Shape of a unit"""
+        return self._unit_shape
 
     @property
     def n_unit_rows(self) -> int:
@@ -439,6 +452,18 @@ class AxesGrid:
             return self.ax_bottom[-1]
         elif pos == "lower right":
             return self.ax_left[-1]
+        
+    # def locate_ax(self, pos: SubplotPos) -> plt.Axes:
+    #     if isinstance(pos, int):
+    #         return self.ax_real[pos]
+    #     elif pos == "upper right":
+    #         return self.ax_real[self.n_cols - 1]
+    #     elif pos == "upper left":
+    #         return self.ax_real[0]
+    #     elif pos == "lower left":
+    #         return self.ax_bottom[-1]
+    #     elif pos == "lower right":
+    #         return self.ax_left[-1]
 
     def add_artist(self, artist: Artist, pos: SubplotPos | None = None) -> None:
         if pos is not None:

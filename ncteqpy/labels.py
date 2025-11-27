@@ -39,6 +39,10 @@ kinvars_yaml_to_py = {
     "ETAMAX": "eta_max",
     "XI_R": "xi_r",
     "XI_F": "xi_f",
+    "PTAVEmin": "pT_average_min",
+    "PTAVEmax": "pT_average_max",
+    "ETADIJETmin": "eta_dijet_min",
+    "ETADIJETmax": "eta_dijet_max",
 }
 
 kinvars_py_to_tex = {
@@ -67,8 +71,11 @@ theory_yaml_to_py = {
     "SIGIPT": "sigma_pT_integrated",
     "F2": "F2",
     "RF2": "ratio_F2",
+    "RF2ISO": "ratio_F2_iso",
     "APPLGRID": "applgrid",
     "RAPPLGRID": "rapplgrid",
+    "CMS_RSIG_RATIO": "cms_ratio_sigma_double",
+    "CMS_RSIG_ETA": "cms_ratio_sigma_eta",
 }
 
 theory_py_to_tex = {

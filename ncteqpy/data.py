@@ -407,9 +407,9 @@ class Datasets(jaml.YAMLWrapper):
                     **info,
                     **dict(zip(grid_row_labels, grid_row)),
                     # add data column that holds the actual observable
-                    "data": grid_row[
+                    "data": float(grid_row[
                         grid_row_labels.index(labels.data_yaml_to_py[observable])
-                    ],
+                    ]),
                 }
                 for grid_row in cast(
                     list[list[float]], jaml.nested_get(data, ["GridSpec", "Grid"])
@@ -426,6 +426,8 @@ class Datasets(jaml.YAMLWrapper):
                 *labels.uncertainties_yaml_to_py.values(),
             ],
         )
+        for col in labels.data_yaml_to_py.values():
+            self._points[col] = self._points[col].astype("Float64", copy=False)
 
         int_cols = [
             "id_dataset",
@@ -607,7 +609,8 @@ class Datasets(jaml.YAMLWrapper):
         )
         index_yaml = self._load_yaml(index_pattern)
 
-        assert isinstance(index_yaml, list)
+        if isinstance(index_yaml, dict):
+            index_yaml = [(self.paths[0], index_yaml)]
 
         for p, data in cast(list[tuple[Path, jaml.YAMLType]], index_yaml):
             if not jaml.nested_in(data, ["Description", "IDDataSet"]):
