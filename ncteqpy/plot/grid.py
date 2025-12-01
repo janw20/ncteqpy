@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from math import ceil
 from typing import Any, cast
-from typing_extensions import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+from matplotlib.artist import Artist
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch
-from matplotlib.artist import Artist
+from typing_extensions import Literal
 
 from ncteqpy.plot.util import AdditionalLegend
 from ncteqpy.util import update_kwargs
@@ -169,16 +169,17 @@ class AxesGrid:
             plt.subplots(sharex=sharex, sharey=sharey, **(kwargs_default | kwargs)),
         )  # pyright: ignore[reportInvalidTypeForm]
 
-        self._ax_all = np.atleast_2d(ax)
+        self._ax_all = np.array(ax).reshape((n_rows, n_cols))
 
         self._fig = fig
-        self._ax = np.atleast_2d(np.array(ax, copy=True))
-        
-        # self._ax_unit_real = self._ax_real.reshape((n_unit_real, unit_shape[0], unit_shape[1]))
+        self._ax = np.array(ax, copy=True).reshape((n_rows, n_cols))
+
+        # fmt: off
         self._ax_unit_real = np.array([self._ax[
-            i // n_unit_cols * unit_shape[0]:(i // n_unit_cols + 1) * unit_shape[0],
-            i % n_unit_cols * unit_shape[1]:(i % n_unit_cols + 1) * unit_shape[1]
+            (i // n_unit_cols * unit_shape[0]):((i // n_unit_cols + 1) * unit_shape[0]),
+            (i % n_unit_cols * unit_shape[1]):((i % n_unit_cols + 1) * unit_shape[1])
         ] for i in range(n_unit_real)])
+        # fmt: on
 
         if isinstance(ax, np.ndarray):
             # remove the superfluous axes in the lower left corner
@@ -352,7 +353,7 @@ class AxesGrid:
     def ax_real(self) -> npt.NDArray[Axes]:
         """numpy.array of shape (n_real,) containing the actual (not left blank) axes"""
         return self._ax_real
-    
+
     @property
     def ax_unit_real(self) -> npt.NDArray[Axes]:
         """numpy.array of shape (n_unit_real, unit_shape[0], unit_shape[1]) containing the actual (not left blank) axes"""
@@ -452,18 +453,6 @@ class AxesGrid:
             return self.ax_bottom[-1]
         elif pos == "lower right":
             return self.ax_left[-1]
-        
-    # def locate_ax(self, pos: SubplotPos) -> plt.Axes:
-    #     if isinstance(pos, int):
-    #         return self.ax_real[pos]
-    #     elif pos == "upper right":
-    #         return self.ax_real[self.n_cols - 1]
-    #     elif pos == "upper left":
-    #         return self.ax_real[0]
-    #     elif pos == "lower left":
-    #         return self.ax_bottom[-1]
-    #     elif pos == "lower right":
-    #         return self.ax_left[-1]
 
     def add_artist(self, artist: Artist, pos: SubplotPos | None = None) -> None:
         if pos is not None:
