@@ -10,8 +10,8 @@ from scipy.optimize import curve_fit
 
 from ncteqpy.data_groupby import DatasetsGroupBy
 from ncteqpy.plot.grid import AxesGrid
+from ncteqpy.plot.util import AdditionalLegend
 from ncteqpy.util import update_kwargs
-
 
 def plot_chi2_data_breakdown(
     ax: plt.Axes,
@@ -24,6 +24,7 @@ def plot_chi2_data_breakdown(
     bar_groupby: DatasetsGroupBy | None = None,
     bar_order_groupby: str | list[str] | None = None,  # TODO?
     bar_props_groupby: DatasetsGroupBy | None = None,
+    bar_labels: Literal["num_points", "chi2"] = "num_points",
     kwargs_bar: dict[str, Any] = {},
     kwargs_bar_label: dict[str, Any] = {},
     kwargs_chi2_line_1: dict[str, Any] = {},
@@ -53,6 +54,8 @@ def plot_chi2_data_breakdown(
         Not implemented yet
     bar_props_groupby : DatasetsGroupBy | None, optional
         How to group the properties (color etc.) of each bar, by default no grouping, i.e., all bars get the same properties.
+    bar_labels : Literal["num_points", "chi2"], optional
+        If the bars should be labeled with the number of points ("num_points") or the χ² value ("chi2"), by default "num_points".
     kwargs_bar : dict[str, Any], optional
         Keyword arguments passed to `plt.Axes.bar` or `plt.Axes.barh`.
     kwargs_bar_label : dict[str, Any], optional
@@ -174,8 +177,13 @@ def plot_chi2_data_breakdown(
         kwargs_legend_default = {}
         kwargs_legend_updated = update_kwargs(kwargs_legend_default, kwargs_legend)
         ax.legend(
-            [mpatches.Patch(**v) for _, v in bar_props_groupby.props.loc[chi2_grouped.index].iterrows()],
-            bar_props_groupby.labels[chi2_grouped.index]
+            [
+                mpatches.Patch(**v)
+                for _, v in bar_props_groupby.props.loc[
+                    chi2_grouped_props.index
+                ].iterrows()
+            ],
+            bar_props_groupby.labels[chi2_grouped_props.index]
             + " ("
             + (
                 chi2_grouped_props
@@ -207,19 +215,20 @@ def plot_chi2_data_breakdown(
         **kwargs_bar_updated,
     )
 
-    # bar_labels = num_points_grouped
+    if bar_labels == "num_points" and num_points_grouped is not None:
+        bar_label_values = num_points_grouped.apply("{:.0f}".format)
+    elif bar_labels == "chi2" and per_point and num_points_grouped is not None:
+        bar_label_values = (chi2_grouped / num_points_grouped).apply("{:.1f}".format)
+    elif bar_labels == "chi2" and not per_point:
+        bar_label_values = chi2_grouped.apply("{:.1f}".format)
+    else:
+        bar_label_values = None
 
     # if bar_orientation == "horizontal" and bar_labels is not None:
     #     bar_labels = bar_labels.iloc[::-1]
 
-    num_points_labels = (
-        num_points_grouped.apply("{:.0f}".format)
-        if num_points_grouped is not None
-        else None
-    )
-
     kwargs_bar_label_default: dict[str, Any] = {
-        "labels": num_points_labels,
+        "labels": bar_label_values,
         "padding": 3,
         "fontsize": "small",
         "bbox": dict(
