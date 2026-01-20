@@ -38,6 +38,8 @@ class Datasets(jaml.YAMLWrapper):
     _index: pd.DataFrame | None = None
     _points: pd.DataFrame | None = None
     _points_after_cuts: pd.DataFrame | None = None
+    _num_points: pd.Series[int] | None = None
+    _num_points_after_cuts: pd.Series[int] | None = None
     _cached_datasets: dict[Path, Dataset] = {}
     _cached_datasets_with_cuts: dict[Path, Dataset] = {}
 
@@ -121,6 +123,33 @@ class Datasets(jaml.YAMLWrapper):
         assert self._points_after_cuts is not None
 
         return self._points_after_cuts
+
+    @property
+    def num_points(self) -> pd.Series[int]:
+        if self._num_points is None or self._yaml_changed():
+            self._num_points = self.points.groupby("id_dataset")["id_dataset"].count()
+            self._num_points.name = "num_points"
+
+        assert self._num_points is not None
+
+        return self._num_points
+
+    @property
+    def num_points_after_cuts(self) -> pd.Series[int]:
+        if self._num_points_after_cuts is None or self._yaml_changed():
+            self._num_points_after_cuts = self.points_after_cuts.groupby("id_dataset")[
+                "id_dataset"
+            ].count()
+            self._num_points_after_cuts.name = "num_points_after_cuts"
+
+            # fill missing IDs with 0
+            self._num_points_after_cuts, _ = self.num_points_after_cuts.align(
+                self.num_points, fill_value=0
+            )
+
+        assert self._num_points_after_cuts is not None
+
+        return self._num_points_after_cuts
 
     @property
     def cached_datasets(self) -> dict[Path, Dataset]:
