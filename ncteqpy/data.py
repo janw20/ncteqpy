@@ -10,7 +10,7 @@ import numpy.typing as npt
 import pandas as pd
 import sympy as sp
 import yaml
-from typing_extensions import Any, Hashable, Literal, Sequence, cast
+from typing_extensions import Any, Hashable, Literal, Sequence, cast, List
 
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
@@ -29,7 +29,7 @@ from ncteqpy.kinematic_variables import (
 )
 from ncteqpy.plot.kinematic_coverage import plot_kinematic_coverage
 from ncteqpy.settings import Settings
-
+from ncteqpy.plot.datasets_years import plot_datasets_timeline
 
 # TODO: make possible to load only subdirs or list of paths
 class Datasets(jaml.YAMLWrapper):
@@ -382,6 +382,7 @@ class Datasets(jaml.YAMLWrapper):
             "Z1": None,
             "A2": None,
             "Z2": None,
+            "year": None,
             "final_state": None,
             "correlated_systematic_uncertainties": None,
         }
@@ -414,6 +415,7 @@ class Datasets(jaml.YAMLWrapper):
             info["Z1"] = az1[1]
             info["A2"] = az2[0]
             info["Z2"] = az2[1]
+            info["year"] = jaml.nested_get(data, ["Description", "Year"])
             info["final_state"] = jaml.nested_get(data, ["Description", "FinalState"])
             info["correlated_systematic_uncertainties"] = jaml.nested_get(
                 data, ["GridSpec", "NumberOfCorrSysErr"]
@@ -625,6 +627,7 @@ class Datasets(jaml.YAMLWrapper):
                     "IDDataSet": None,
                     "AZValues1": None,
                     "AZValues2": None,
+                    "Year":None,
                 },
                 "GridSpec": {
                     "NumberOfCorrSysErr": None,
@@ -672,6 +675,7 @@ class Datasets(jaml.YAMLWrapper):
                     "Z1": az1[1],
                     "A2": az2[0],
                     "Z2": az2[1],
+                    "year": jaml.nested_get(data, ["Description", "Year"]),
                     "final_state": jaml.nested_get(data, ["Description", "FinalState"]),
                     "correlated_systematic_uncertainties": jaml.nested_get(
                         data, ["GridSpec", "NumberOfCorrSysErr"]
@@ -833,6 +837,33 @@ class Datasets(jaml.YAMLWrapper):
             kwargs_cuts_labels=kwargs_cuts_labels,
         )
 
+    def plot_timeline(
+        self,
+        subplot_groupby:  DatasetsGroupBy | None = None,
+        bar_orientation: Literal["vertical", "horizontal"] = "vertical",
+        kwargs_bar: dict[str, Any] | List[dict[str, Any]] = {},
+        kwargs_bar_cum: dict[str, Any] | List[dict[str, Any]] = {},
+        kwargs_subplots: dict[str, Any] ={},
+        width: float = 0.8,
+        share_y: bool = False,
+    ):
+        self.points_after_cuts
+        groupby= gb = self.groupby(
+            "year",
+            sort="ascending"
+        )
+        plot_datasets_timeline(
+            datasets_index=self.index,
+            groupby=groupby,
+            cuts=self.cuts,
+            bar_orientation=bar_orientation,
+            width=width,
+            kwargs_bar=kwargs_bar,
+            kwargs_bar_cum=kwargs_bar_cum,
+            subplot_groupby=subplot_groupby,
+            share_y=share_y,
+            kwargs_subplots=kwargs_subplots
+        )
 
 class Dataset:
 
@@ -1031,6 +1062,15 @@ class Dataset:
             )
 
         return self._Z2
+    
+    @property
+    def year(self) -> int | None:
+        if self._year is None:
+            self._year = cast(
+                int, jaml.nested_get(self.yaml, ["Description", "Year", 1])
+            )
+
+        return self._year
 
     @property
     def kinematic_variables(self) -> list[str]:
