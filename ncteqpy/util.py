@@ -1,9 +1,35 @@
 from __future__ import annotations
 
-from typing import Any
+from typing_extensions import Any, Sequence
 
 import numpy as np
 import pandas as pd
+
+
+def format_indices(indices: Sequence[int]) -> str:
+    """Format indices such that more than 2 neighboring indices that differ only by 1 are contracted, i.e., [1, 2, 4, 5, 6] -> '1, 2, 4-6'.
+
+    Parameters
+    ----------
+    indices : Sequence[int]
+        Indices to format.
+
+    Returns
+    -------
+    str
+        Formatted indices.
+    """
+
+    indices_sorted = sorted(indices)
+    diff_idx = np.nonzero(np.diff(indices_sorted) > 1)[0]
+
+    # groups of neighboring indices that differ only by 1
+    groups = np.split(indices_sorted, diff_idx + 1)
+    
+    return ", ".join(
+        "-".join(g[[0, -1]].astype(str)) if len(g) > 2 else ", ".join(g.astype(str))
+        for g in groups
+    )
 
 
 def format_unit(variable: str, unit: str) -> str:
