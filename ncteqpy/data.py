@@ -839,30 +839,33 @@ class Datasets(jaml.YAMLWrapper):
 
     def plot_timeline(
         self,
+        data: Literal["all", "fitted"]= "all",
         subplot_groupby:  DatasetsGroupBy | None = None,
+        bar_groupby:  DatasetsGroupBy | None = None,
         bar_orientation: Literal["vertical", "horizontal"] = "vertical",
         kwargs_bar: dict[str, Any] | List[dict[str, Any]] = {},
         kwargs_bar_cum: dict[str, Any] | List[dict[str, Any]] = {},
         kwargs_subplots: dict[str, Any] ={},
         width: float = 0.8,
         share_y: bool = False,
+        kwargs_annotation: dict[str, Any] | List[dict[str, Any]] = {},
     ):
-        self.points_after_cuts
-        groupby= gb = self.groupby(
-            "year",
-            sort="ascending"
-        )
+        if data=="fitted":
+           self.index["num_points_after_cuts"]=self.index["id_dataset"].map(self.num_points_after_cuts)
+
+            
         plot_datasets_timeline(
             datasets_index=self.index,
-            groupby=groupby,
-            cuts=self.cuts,
+            data=data,
             bar_orientation=bar_orientation,
             width=width,
             kwargs_bar=kwargs_bar,
             kwargs_bar_cum=kwargs_bar_cum,
             subplot_groupby=subplot_groupby,
+            bar_groupby=bar_groupby,
             share_y=share_y,
-            kwargs_subplots=kwargs_subplots
+            kwargs_subplots=kwargs_subplots,
+            kwargs_annotation=kwargs_annotation,
         )
 
 class Dataset:

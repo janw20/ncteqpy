@@ -196,3 +196,19 @@ def update_kwargs(
         return kwargs
     else:
         raise ValueError("kwargs_user must be dict or list")
+
+
+def forward_fill_dict(d):
+    keys = sorted(d)
+    result = {}
+
+    last_value = None
+    key_idx = 0
+
+    for k in range(keys[0], keys[-1] + 1):
+        if k == keys[key_idx]:
+            last_value = d[k]
+            key_idx += 1
+        result[k] = last_value
+
+    return result
