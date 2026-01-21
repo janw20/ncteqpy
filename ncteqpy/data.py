@@ -10,7 +10,7 @@ import numpy.typing as npt
 import pandas as pd
 import sympy as sp
 import yaml
-from typing_extensions import Any, Hashable, Literal, Sequence, cast, List
+from typing_extensions import Any, Hashable, Literal, Sequence, cast, List, Tuple
 
 import ncteqpy.jaml as jaml
 import ncteqpy.labels as labels
@@ -30,6 +30,7 @@ from ncteqpy.kinematic_variables import (
 from ncteqpy.plot.kinematic_coverage import plot_kinematic_coverage
 from ncteqpy.settings import Settings
 from ncteqpy.plot.datasets_years import plot_datasets_timeline
+from ncteqpy.plot.datasets_histograms import plot_datasets_histogram
 
 # TODO: make possible to load only subdirs or list of paths
 class Datasets(jaml.YAMLWrapper):
@@ -849,6 +850,7 @@ class Datasets(jaml.YAMLWrapper):
         width: float = 0.8,
         share_y: bool = False,
         kwargs_annotation: dict[str, Any] | List[dict[str, Any]] = {},
+
     ):
         if data=="fitted":
            self.index["num_points_after_cuts"]=self.index["id_dataset"].map(self.num_points_after_cuts)
@@ -866,6 +868,56 @@ class Datasets(jaml.YAMLWrapper):
             share_y=share_y,
             kwargs_subplots=kwargs_subplots,
             kwargs_annotation=kwargs_annotation,
+
+        )
+
+    def plot_histogram(
+        self,
+        x_var: str = "A_heavier",
+        order: List[Any] | Literal["ascending", "descending"] | None = None,
+        data: Literal["all", "fitted"]= "all",
+        subplot_groupby:  DatasetsGroupBy | None = None,
+        bar_groupby:  DatasetsGroupBy | None = None,
+        bar_orientation: Literal["vertical", "horizontal"] = "vertical",
+        kwargs_bar: dict[str, Any] | List[dict[str, Any]] = {},
+        kwargs_bar_cum: dict[str, Any] | List[dict[str, Any]] = {},
+        kwargs_subplots: dict[str, Any] ={},
+        width: float = 0.8,
+        share_y: bool = False,
+        kwargs_annotation: dict[str, Any] | List[dict[str, Any]] = {},
+        x_tick_labels: List[str] | None = None,
+        symlog_y:bool=True,
+        linthresh: float= 500,
+        kwargs_legend:  dict[str, Any] | List[dict[str, Any]] = {},
+        legend:bool= True,
+        yticks: Tuple[List[float], List[Any]] | None = None,
+        kwargs_xlabel:  dict[str, Any] | List[dict[str, Any]] = {},
+    ):
+        if data=="fitted":
+           self.index["num_points_after_cuts"]=self.index["id_dataset"].map(self.num_points_after_cuts)
+
+            
+        plot_datasets_histogram(
+            datasets_index=self.index,
+            x_var=x_var,
+            data=data,
+            bar_orientation=bar_orientation,
+            width=width,
+            order=order, 
+            kwargs_bar=kwargs_bar,
+            kwargs_bar_cum=kwargs_bar_cum,
+            subplot_groupby=subplot_groupby,
+            bar_groupby=bar_groupby,
+            share_y=share_y,
+            kwargs_subplots=kwargs_subplots,
+            kwargs_annotation=kwargs_annotation,
+            kwargs_legend=kwargs_legend,
+            symlog_y=symlog_y,
+            linthresh=linthresh,
+            x_tick_labels = x_tick_labels,
+            legend=legend,
+            yticks=yticks,
+            kwargs_xlabel=kwargs_xlabel
         )
 
 class Dataset:
