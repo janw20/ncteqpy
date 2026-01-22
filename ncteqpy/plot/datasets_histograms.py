@@ -18,31 +18,31 @@ import numpy.typing as npt
 
 def plot_datasets_histogram(
     datasets_index: pd.DataFrame,
-    x_var:str="A_heavier",
     order: List[Any] | Literal["ascending", "descending"] | None = None,
     data: Literal["all", "fitted"] = "all",
     bar_groupby: DatasetsGroupBy | None = None,
+    subbar_groupby: DatasetsGroupBy | None = None,
     subplot_groupby: DatasetsGroupBy | None = None,
     # bar_order_groupby: str | list[str] | None = None,  # TODO?
     # bar_props_groupby: DatasetsGroupBy | None = None,
-    # bar_labels: Literal["num_points", "chi2"] = "num_points",
+    bar_labels: Literal["num_points", "x"] = "num_points",
     bar_orientation: Literal["vertical", "horizontal"] = "vertical",
     share_y: bool = False,
     width: float = 0.8,
-    kwargs_bar: dict[str, Any] | List[dict[str, Any]] = {},
-    kwargs_bar_cum: dict[str, Any] | List[dict[str, Any]] = {},
-    kwargs_bar_label: dict[str, Any] = {},
-    kwargs_legend: dict[str, Any] = {},
-    kwargs_subplots: dict[str, Any] | List[dict[str, Any]] = {},
-    kwargs_annotation: dict[str, Any] | List[dict[str, Any]] = {},
-    kwargs_xlabel:  dict[str, Any] | List[dict[str, Any]] = {},
     symlog_y:bool=True,
     linthresh: float= 500,
     x_tick_labels: List[str] | None = None, 
     annotate_bars: bool=True,
+    annotate_total_number: bool = True,
     legend:bool=True,
-    yticks: Tuple[List[float], List[Any]] | None = None
-
+    yticks: Tuple[List[float], List[Any]] | None = None,
+    kwargs_bar: dict[str, Any] | List[dict[str, Any]] | List[List[dict[str, Any]] ] = {},
+    kwargs_subbar: dict[str, Any] | List[dict[str, Any]] = {},
+    kwargs_legend: dict[str, Any] = {},
+    kwargs_subplots: dict[str, Any] | List[dict[str, Any]] = {},
+    kwargs_annotation_bars: dict[str, Any] | List[dict[str, Any]] = {},
+    kwargs_annotation_total_number: dict[str, Any] = {},
+    kwargs_xlabel:  dict[str, Any] | List[dict[str, Any]] = {},
 
 ) -> AxesGrid:
     """Plot histogram of number of data points vs. years.
@@ -52,8 +52,8 @@ def plot_datasets_histogram(
     ax : plt.Axes
         The axes to plot on.
     """
-
-    if x_var not in datasets_index.columns:
+    x_var=(bar_groupby.keys if not isinstance(bar_groupby.keys, list) else bar_groupby.keys[0]) if bar_groupby is not None else 0
+    if x_var not in datasets_index.columns and bar_groupby is not None:
         raise ValueError(f"{x_var} is not a column in datasets_index")
     num_axes = subplot_groupby.groupby.ngroups if subplot_groupby is not None else 1
 
@@ -63,7 +63,7 @@ def plot_datasets_histogram(
     ax_grid = AxesGrid(num_axes, **kwargs)
 
     if subplot_groupby is not None:
-        data_groupby = (
+        data_groupby_subplot = (
             datasets_index.sort_values(
                 by="id_dataset",
                 key=subplot_groupby.sort_key,
@@ -72,20 +72,20 @@ def plot_datasets_histogram(
             .groupby(subplot_groupby.grouper, sort=False, dropna=False)
         )
     else:
-        data_groupby = [(None, datasets_index)]
+        data_groupby_subplot = [(None, datasets_index)]
 
-    for i, (ax, (_, data_i)) in enumerate(zip(ax_grid.ax_real, data_groupby)):
+    for i, (ax, (_, data_i)) in enumerate(zip(ax_grid.ax_real, data_groupby_subplot)):
         ax: plt.Axes
-        print(f"{data_i[f"{x_var}"].sort_values().to_numpy()[5]}, type: {type(data_i[f"{x_var}"].sort_values().to_numpy()[5])}")
-        if all(isinstance(v, float) for v in data_i[f"{x_var}"].sort_values().to_numpy()) or all(isinstance(v, int) for v in data_i[f"{x_var}"].sort_values().to_numpy()):
-            x = np.unique(data_i[f"{x_var}"].sort_values().to_numpy())
-            number=True
-        else:
-            if order == "descending":
-                x = np.unique(data_i[f"{x_var}"].sort_values().to_numpy())[::-1]
+        if bar_groupby is not None:
+            if all(isinstance(v, float) for v in data_i[f"{x_var}"].sort_values().to_numpy()) or all(isinstance(v, int) for v in data_i[f"{x_var}"].sort_values().to_numpy()):
+                x = np.unique(data_i[f"{x_var}"].sort_values().to_numpy())
+                number=True
             else:
                 x = np.unique(data_i[f"{x_var}"].sort_values().to_numpy())
-            number=False
+                number=False
+        else: 
+            x=[0]
+            number=True
         bar_locs_all = {x_f: i for i,x_f in enumerate(x)}  
 
 
@@ -109,7 +109,7 @@ def plot_datasets_histogram(
             )
 
         if bar_groupby is not None:
-            data_i_groupby = (
+            data_i_groupby_bar = (
                 data_i.sort_values(
                     by="id_dataset",
                     key=bar_groupby.sort_key,
@@ -118,97 +118,168 @@ def plot_datasets_histogram(
                 .groupby(bar_groupby.grouper, sort=False, dropna=False)
             )
         else:
-            data_i_groupby = [(None, data_i)]
+            data_i_groupby_bar = [(None, data_i)]
 
-        num_points = {}
+        l_j = len(bar_groupby.labels) if bar_groupby != None else 0
 
-        for j, (_, data_bar_j) in enumerate(data_i_groupby):
+        l_k = len(subbar_groupby.labels) if subbar_groupby != None else 0
+
+        num_points={}
+        labelsj= bar_groupby.labels if bar_groupby !=None else ["0"]
+        labelsk= subbar_groupby.labels if subbar_groupby != None else ["0"]
+
+        for j, (_, data_bar_j) in enumerate(data_i_groupby_bar):
             
-            bar_locs_j=[]
+            label_j=data_bar_j[f"{bar_groupby.keys}"].iloc[0] if bar_groupby != None else 0
+            num_points[f"{label_j}"]={} 
 
-            l = len(data_i_groupby)
-            kwargs_bar_default = {"width": width / l, "color": "black", "label": bar_groupby.labels.to_numpy()[j]}
-            kwargs_bar_updated = update_kwargs(kwargs_bar_default, kwargs_bar, j)
+            if subbar_groupby is not None:
+                if bar_groupby is not None:
+                    data_j_groupby_subbar = (
+                        data_bar_j.sort_values(
+                            by="id_dataset",
+                            key=subbar_groupby.sort_key,
+                        )
+                        .groupby(subbar_groupby.grouper, sort=False, dropna=False)
+                    )
+                else: 
+                    data_j_groupby_subbar = (
+                        data_bar_j.sort_values(
+                        by="id_dataset",
+                        key=subbar_groupby.sort_key,
+                        )
+                        .set_index("id_dataset")
+                        .groupby(subbar_groupby.grouper, sort=False, dropna=False)
+                )
+                for k in subbar_groupby.labels:
+                    num_points[f"{label_j}"][f"{k}"]=0
+            else:
+                data_j_groupby_subbar = [(None, data_i)]
+                num_points[f"{label_j}"]["0"]=0
 
-            num_points[j] = {}
+            
 
 
-            for x_f in x:
-                if data == "all":
-                    if number:
-                        num_points[j][x_f] = np.sum(
-                            data_bar_j.query(rf"{x_var}=={x_f}")[
-                                "num_points_after_cuts"
+            for k, (_, data_subbar_k) in enumerate(data_j_groupby_subbar):
+                label_k=data_subbar_k[f"{subbar_groupby.keys}"].iloc[0] if subbar_groupby != None else 0
+                if bar_groupby is not None:
+                    if data == "all":
+                        if number:
+                            num_points[f"{label_j}"][f"{label_k}"] += np.sum(
+                                data_subbar_k.query(rf"{x_var}=={label_j}")[
+                                "num_points"
                             ].to_numpy()
                         )
-                    else:
-                        num_points[j][x_f] = np.sum(
-                            data_bar_j.query(rf"{x_var}=='{x_f}'")[
-                                "num_points_after_cuts"
-                            ].to_numpy()
+                        else:
+                            num_points[f"{label_j}"][f"{label_k}"]+= np.sum(
+                                data_subbar_k.query(rf"{x_var}=='{label_j}'")[
+                                    "num_points"
+                                ].to_numpy()
                         )   
-                elif data == "fitted":
-                    if number:
-                        num_points[j][x_f] = np.sum(
-                            data_bar_j.query(rf"{x_var}=={x_f}")[
+                    elif data == "fitted":
+                        if number:
+                            num_points[f"{label_j}"][f"{label_k}"] += np.sum(
+                                data_subbar_k.query(rf"{x_var}=={label_j}")[
+                                    "num_points_after_cuts"
+                                ].to_numpy() 
+                            )
+                        else:
+                            num_points[f"{label_j}"][f"{label_k}"] += np.sum(
+                                data_subbar_k.query(rf"{x_var}=='{label_j}'")[
+                                    "num_points_after_cuts"
+                                ].to_numpy() 
+                            )
+                else:
+                    if data == "all":
+                        num_points[f"{label_j}"][f"{label_k}"] += np.sum(
+                            data_subbar_k[
+                            "num_points"
+                        ].to_numpy())
+                    elif data == "fitted":
+                        num_points[f"{label_j}"][f"{label_k}"] += np.sum(
+                            data_subbar_k[
                                 "num_points_after_cuts"
-                            ].to_numpy()
-                        )
-                    else:
-                        num_points[j][x_f] = np.sum(
-                            data_bar_j.query(rf"{x_var}=='{x_f}'")[
-                                "num_points_after_cuts"
-                            ].to_numpy()
-                        )                       
+                            ].to_numpy()) 
 
-                bar_locs_j.append(bar_locs_all[x_f])
-
-            bar = ax_barhv(
-                np.array(bar_locs_j) - width / 2 + j * width / l if l%2==0 else np.array(bar_locs_j) - width / 2 +  (j+1/2) * width / l,
-                num_points[j].values(),
+        num_points_cum={}
+        if subbar_groupby != None: 
+            if bar_groupby!=None:
+                for k, labelk in enumerate(subbar_groupby.labels):
+                    kwargs_subbar_default = {"width": width / l_k, "color": "black", "label": labelk if subbar_groupby else ""}
+                    kwargs_subbar_updated = update_kwargs(kwargs_subbar_default, kwargs_subbar, k)
+                    bar = ax_barhv(
+                        np.array(list(bar_locs_all.values())) - width / 2 + k * width / l_k if l_k%2==0 else np.array(list(bar_locs_all.values())) - width / 2 +  (k+1/2) * width / l_k,
+                        [num_points[f"{label_j}"][labelk] for label_j in bar_groupby.labels],
+                        **kwargs_subbar_updated,
+                    )
+                for label_j in bar_groupby.labels:
+                    num_points_cum[f"{label_j}"]=np.sum([num_points[f"{label_j}"][k] for k in subbar_groupby.labels]) 
+            else:
+                for k, labelk in enumerate(subbar_groupby.labels):
+                    kwargs_subbar_default = {"width": width / l_k, "color": "black", "label": labelk if subbar_groupby else ""}
+                    kwargs_subbar_updated = update_kwargs(kwargs_subbar_default, kwargs_subbar, k)
+                    bar = ax_barhv(
+                        np.array(list(bar_locs_all.values())) - width / 2 + k * width / l_k if l_k%2==0 else np.array(list(bar_locs_all.values())) - width / 2 +  (k+1/2) * width / l_k,
+                        [num_points["0"][labelk]],
+                        **kwargs_subbar_updated,
+                    )
+                num_points_cum["0"]=np.sum([num_points["0"][k] for k in subbar_groupby.labels])
+        else:
+            if bar_groupby!=None:
+                for label_j in bar_groupby.labels:
+                    num_points_cum[f"{label_j}"]=np.sum([num_points[f"{label_j}"]["0"]])    
+            else: 
+                num_points_cum["0"]=np.sum([num_points["0"]["0"]])           
+        if subbar_groupby != None:
+            kwargs_bar_default = {"width": width, "alpha": 0.3, "color": "grey", "zorder":-1}
+            kwargs_bar_updated = update_kwargs(
+                kwargs_bar_default, kwargs_bar, i
+            )
+            bar_cum = ax_barhv_cum(
+                list(bar_locs_all.values()),
+                list(num_points_cum.values()),
                 **kwargs_bar_updated,
             )
-        
-        num_points_cum={}
-        for x_f in x:
-            num_points_cum[x_f]=np.sum([num_points[j][x_f] for j in range(len(data_i_groupby)) if x_f in num_points[j].keys()])
+        else:
+            kwargs_bar_default = {"width": width, "alpha": 0.9}
 
+            for  j, labelj in enumerate(labelsj):     
+                kwargs_bar_updated = update_kwargs(
+                    kwargs_bar_default, kwargs_bar[i], j
+                )
 
-        kwargs_bar_cum_default = {"width": width, "alpha": 0.3, "color": "grey", "zorder":-1}
-        
-        kwargs_bar_cum_updated = update_kwargs(
-            kwargs_bar_cum_default, kwargs_bar_cum, i
-        )
-        bar_cum = ax_barhv_cum(
-            bar_locs_all.values(),
-            num_points_cum.values(),
-            **kwargs_bar_cum_updated,
-            )
+                bar_cum = ax_barhv_cum(
+                    list(bar_locs_all.values())[j],
+                    num_points_cum[f"{labelj}"],
+                    **kwargs_bar_updated,
+                )
+
+   
         if annotate_bars:
-            for f, x_f in enumerate(x):
-                kwargs_annotation_default_f = {
-                    "text": rf"{num_points_cum[x_f]}",
-                    "xy": (float(bar_locs_all[x_f])-width/2, float(num_points_cum[x_f])),
+            for j,labelj in enumerate(labelsj):
+                kwargs_annotation_bars_default_f = {
+                    "text": rf"{num_points_cum[f"{labelj}"]}" if bar_labels=="num_points" else f"{labelj}",
+                    "xy": (float(list(bar_locs_all.values())[j])-width/2, float(num_points_cum[f"{labelj}"])),
                     "color": "black",
                     "fontsize": 15,
                 }
-                kwargs_annotation_updated = update_kwargs(
-                    kwargs_annotation_default_f, kwargs_annotation, f
+                kwargs_annotation_bars_updated = update_kwargs(
+                    kwargs_annotation_bars_default_f, kwargs_annotation_bars, j
                 )
-                ax.annotate(**kwargs_annotation_updated)
-        else:
-            kwargs_annotation_default = {
+                ax.annotate(**kwargs_annotation_bars_updated)
+        if annotate_total_number:
+            kwargs_annotation_total_number_default = {
                 "text": rf"$N_\text{{data}}=${np.sum(list(num_points_cum.values()))}",
-                "xy": (0.15, 0.85),
+                "xy": (0.85, 0.85),
                 "xycoords": ax.transAxes,
                 "color": "black",
                 "fontsize": 15,
             }
 
-            kwargs_annotation_updated = update_kwargs(
-                kwargs_annotation_default, kwargs_annotation, i
+            kwargs_annotation_total_number_updated = update_kwargs(
+                kwargs_annotation_total_number_default, kwargs_annotation_total_number, i
             )
-            ax.annotate(**kwargs_annotation_updated)
+            ax.annotate(**kwargs_annotation_total_number_updated)
 
         if symlog_y:
             ax.set_yscale("symlog", linthresh=linthresh)
@@ -220,7 +291,7 @@ def plot_datasets_histogram(
         if yticks: 
             ax.set_yticks(yticks[0], yticks[1])
         if legend:
-            ax.legend()
+            ax.legend(**kwargs_legend)
         
         kwargs_xlabel_default={"xlabel": x_var}
         kwargs_xlabel_updated = update_kwargs(
