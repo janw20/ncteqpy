@@ -20,20 +20,25 @@ import numpy.typing as npt
 def plot_datasets_timeline(
     datasets_index: pd.DataFrame,
     data: Literal["all", "fitted"] = "all",
-    bar_groupby: DatasetsGroupBy | None = None,
+    subbar_groupby: DatasetsGroupBy | None = None,
     subplot_groupby: DatasetsGroupBy | None = None,
     # bar_order_groupby: str | list[str] | None = None,  # TODO?
     # bar_props_groupby: DatasetsGroupBy | None = None,
-    # bar_labels: Literal["num_points", "chi2"] = "num_points",
+    bar_labels: Literal["num_points", "year"] = "num_points" ,
     bar_orientation: Literal["vertical", "horizontal"] = "vertical",
     share_y: bool = False,
     width: float = 0.8,
-    kwargs_bar: dict[str, Any] | List[dict[str, Any]] = {},
+    annotate_bars: bool=True,
+    annotate_total_number: bool = True,
+    legend:bool=True,
+    cumulated: Literal["separated", "unified"]= "unified",
+    kwargs_subbar: dict[str, Any] | List[dict[str, Any]] = {},
     kwargs_bar_cum: dict[str, Any] | List[dict[str, Any]] = {},
     kwargs_bar_label: dict[str, Any] = {},
     kwargs_legend: dict[str, Any] = {},
     kwargs_subplots: dict[str, Any] | List[dict[str, Any]] = {},
-    kwargs_annotation: dict[str, Any] | List[dict[str, Any]] = {},
+    kwargs_annotation_bars: dict[str, Any] | List[dict[str, Any]] = {},
+    kwargs_annotation_total_number: dict[str, Any] | List[dict[str, Any]] = {},
 ) -> AxesGrid:
     """Plot histogram of number of data points vs. years.
 
@@ -49,6 +54,8 @@ def plot_datasets_timeline(
 
     ax_grid = AxesGrid(num_axes, **kwargs)
 
+    years_with_data=np.sort(np.unique(datasets_index["year"].to_numpy()))
+
     if subplot_groupby is not None:
         data_groupby = (
             datasets_index.sort_values(
@@ -61,7 +68,11 @@ def plot_datasets_timeline(
     else:
         data_groupby = [(None, datasets_index)]
 
-    for i, (ax, (_, data_i)) in enumerate(zip(ax_grid.ax_real, data_groupby)):
+    labels_subplot=subplot_groupby.labels.to_numpy() if subplot_groupby is not None else [""]
+
+    for i, (ax, label_i, (_, data_i)) in enumerate(zip(ax_grid.ax_real, labels_subplot, data_groupby)):
+        num_points_cum_all={}
+        num_points_all={}
         ax: plt.Axes
 
         if bar_orientation == "vertical":
@@ -83,79 +94,129 @@ def plot_datasets_timeline(
                 "bar_orientation must be either 'vertical' or 'horizontal'"
             )
 
-        if bar_groupby is not None:
+        if subbar_groupby is not None:
             data_i_groupby = (
                 data_i.sort_values(
                     by="id_dataset",
-                    key=bar_groupby.sort_key,
+                    key=subbar_groupby.sort_key,
                 )
                 .set_index("id_dataset")
-                .groupby(bar_groupby.grouper, sort=False, dropna=False)
+                .groupby(subbar_groupby.grouper, sort=False, dropna=False)
             )
         else:
             data_i_groupby = [(None, data_i)]
+        
 
-        for j, (_, data_bar_j) in enumerate(data_i_groupby):
+        l_j=len(data_i_groupby)
+        labels_subbar=subbar_groupby.labels.to_numpy() if subbar_groupby is not None else [""]
+
+        for j, (label_j,  (_, data_subbar_j)) in enumerate(zip(labels_subbar ,data_i_groupby)):
             l = len(data_i_groupby)
             num_points = {}
             num_points_cum = {}
 
-            for y in np.sort(np.unique(data_bar_j["year"].to_numpy())):
+            for y in np.sort(np.unique(data_subbar_j["year"].to_numpy())):
                 if data == "all":
                     num_points[y] = np.sum(
-                        data_bar_j.query(f"year =={y}")["num_points"].to_numpy()
+                        data_subbar_j.query(f"year =={y}")["num_points"].to_numpy()
                     )
                 elif data == "fitted":
                     num_points[y] = np.sum(
-                        data_bar_j.query(f"year =={y}")[
+                        data_subbar_j.query(f"year =={y}")[
                             "num_points_after_cuts"
                         ].to_numpy()
                     )
                 num_points_cum[y] = np.sum(list(num_points.values()))
-
-            num_points_cum[2026] = list(num_points_cum.values())[-1]
-            num_points_cum_filled = forward_fill_dict(num_points_cum)
+                if y in num_points_all.keys():
+                    num_points_all[y]+=num_points[y]
+                else:
+                    num_points_all[y]=num_points[y]
 
             bar_locs = np.array(list(num_points.keys()))
-            bar_locs_cum = np.array(list(num_points_cum_filled.keys()))
 
-            kwargs_bar_default = {"width": width / l, "color": "black"}
-            kwargs_bar_cum_default = {"width": width / l, "alpha": 0.3, "color": "grey"}
+            kwargs_subbar_default = {"width": width / l, "color": "black", "label": f"{label_i} {label_j}" }
 
             if l == 1:
-                kwargs_bar_updated = update_kwargs(kwargs_bar_default, kwargs_bar, i)
-                kwargs_bar_cum_updated = update_kwargs(
-                    kwargs_bar_cum_default, kwargs_bar_cum, i
-                )
+                kwargs_subbar_updated = update_kwargs(kwargs_subbar_default, kwargs_subbar, i)
+
             else:
-                kwargs_bar_updated = update_kwargs(kwargs_bar_default, kwargs_bar, j)
-                kwargs_bar_cum_updated = update_kwargs(
-                    kwargs_bar_cum_default, kwargs_bar_cum, j
-                )
+                kwargs_subbar_updated = update_kwargs(kwargs_subbar_default, kwargs_subbar, j)
+
 
             bar = ax_barhv(
                 bar_locs - width / 2 + j * width / l,
                 num_points.values(),
-                **kwargs_bar_updated,
+                **kwargs_subbar_updated,
             )
+            num_points_cum[2026] = list(num_points_cum.values())[-1]
+            num_points_cum_filled = forward_fill_dict(num_points_cum)
+            if cumulated=="separated":
+
+                bar_locs_cum = np.array(list(num_points_cum_filled.keys()))
+
+                kwargs_bar_cum_default = {"width": width / l, "alpha": 0.3, "color": "grey"}
+
+                if l == 1:
+                    kwargs_bar_cum_updated = update_kwargs(
+                        kwargs_bar_cum_default, kwargs_bar_cum, i
+                    )
+                else:
+                    kwargs_bar_cum_updated = update_kwargs(
+                        kwargs_bar_cum_default, kwargs_bar_cum, j
+                    )
+                bar_cum = ax_barhv_cum(
+                    bar_locs_cum - width / 2 + j * width / l,
+                    num_points_cum_filled.values(),
+                    **kwargs_bar_cum_updated,
+                )
+            else: 
+                for y in list(num_points_cum_filled.keys()):
+                    if y not in num_points_cum_all.keys():
+                        num_points_cum_all[y]=num_points_cum_filled[int(y)]
+                    else:
+                        num_points_cum_all[y]+=num_points_cum_filled[int(y)]
+
+        if cumulated=="unified":
+
+            num_points_cum_filled_all=forward_fill_dict(num_points_cum_all)
+            bar_locs_cum = np.array(list(num_points_cum_filled_all.keys()))
+            kwargs_bar_cum_default = {"width": width, "alpha": 0.3, "color": "grey"}
+
+            kwargs_bar_cum_updated = update_kwargs(
+                    kwargs_bar_cum_default, kwargs_bar_cum, i
+                )
             bar_cum = ax_barhv_cum(
-                bar_locs_cum - width / 2 + j * width / l,
-                num_points_cum_filled.values(),
+                bar_locs_cum - width / 2,
+                num_points_cum_filled_all.values(),
                 **kwargs_bar_cum_updated,
             )
-            kwargs_annotation_default = {
-                "text": rf"$N_\text{{data}}=${list(num_points_cum.values())[-1]}",
-                "xy": (0.15, 0.85 - j * 0.1),
+        if annotate_bars:
+            for j,y in enumerate(list(num_points_all.keys())):
+                kwargs_annotation_bars_default_f = {
+                    "text": rf"{num_points_all[y]}" if bar_labels=="num_points" else bar_labels=="year" f"{y}",
+                    "xy": (y-width/2, float(num_points_all[y])) if l_j==1 or cumulated=="unified" else (y, float(num_points_all[y])),
+                    "color": "black",
+                    "fontsize": 12,
+                    "rotation": 0,
+                    "ha": "center",
+                    "va": "center",
+                }
+                kwargs_annotation_bars_updated = update_kwargs(
+                    kwargs_annotation_bars_default_f, kwargs_annotation_bars, j
+                )
+                ax.annotate(**kwargs_annotation_bars_updated)
+        if annotate_total_number:
+            kwargs_annotation_total_number_default = {
+                "text": rf"$N_\text{{data}}=${list(num_points_cum_filled.values())[-1]}",
+                "xy": (0.15, 0.85),
                 "xycoords": ax.transAxes,
-                "color": kwargs_bar_updated["color"],
+                "color": "black",
                 "fontsize": 15,
             }
-            if l == 1:
-                kwargs_annotation_updated = update_kwargs(
-                    kwargs_annotation_default, kwargs_annotation, i
-                )
-            else:
-                kwargs_annotation_updated = update_kwargs(
-                    kwargs_annotation_default, kwargs_annotation, j
-                )
-            ax.annotate(**kwargs_annotation_updated)
+            kwargs_annotation_total_number_updated = update_kwargs(
+                kwargs_annotation_total_number_default, kwargs_annotation_total_number, i
+            )
+            ax.annotate(**kwargs_annotation_total_number_updated)
+            ax.annotate(**kwargs_annotation_total_number_updated)
+        if legend:
+            ax.legend()
