@@ -87,6 +87,23 @@ class Hessian(jaml.YAMLWrapper):
         return self._parameters_minimum
 
     @property
+    def hessian(self) -> npt.NDArray[np.float64]:
+        if self._hessian is None or self._yaml_changed():
+            pattern = jaml.Pattern({"HessianErrorAnalysis": {"Hessian": None}})
+            yaml = self._load_yaml(pattern)
+
+            assert isinstance(yaml, dict)
+
+            hessian_yaml = cast(
+                list[list[float]],
+                jaml.nested_get(yaml, ["HessianErrorAnalysis", "Hessian"]),
+            )
+
+            self._hessian = np.array(hessian_yaml)
+
+        return self._hessian
+
+    @property
     def eigenvalues(self) -> pd.Series:
         if self._eigenvalues is None or self._yaml_changed():
             pattern = jaml.Pattern({"HessianErrorAnalysis": {"Eigenvalues": None}})
