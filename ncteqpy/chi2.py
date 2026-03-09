@@ -24,6 +24,7 @@ from ncteqpy.plot.chi2_histograms import (
 from ncteqpy.plot.data_vs_theory import DataVsTheoryType
 from ncteqpy.plot.grid import AxesGrid
 from ncteqpy.plot.util import AdditionalLegend
+from ncteqpy.tables.data_chi2 import ColumnType, table_data_chi2
 
 LegendPos = (
     Literal["upper right", "upper left", "lower left", "lower right"] | int | None
@@ -626,6 +627,95 @@ class Chi2(jaml.YAMLWrapper):
             )
 
         return self._minimum_S_E
+
+    def table_data(
+        self,
+        columns: Sequence[ColumnType],
+        id_dataset: Sequence[int] | None = None,
+        type_experiment: str | SequenceNotStr[str] | None = None,
+        column_types: SequenceNotStr[str] | None = None,
+        format_columns: str | list[str | None] | dict[ColumnType, str] | None = None,
+        format_total: str | list[str | None] | dict[ColumnType, str] | None = None,
+        sort_by: str | SequenceNotStr[str] | None = None,
+        sort_ascending: bool | Sequence[bool | None] | None = None,
+        sparse_columns: Literal["all"] | Sequence[ColumnType] | None = "all",
+        hlines: ColumnType | Sequence[ColumnType] | None = None,
+        highlight: int | Sequence[int] | None = None,
+        labels: dict[ColumnType, str] | None = None,
+        title: str | None = None,
+    ) -> tuple[pd.DataFrame, str]:
+        """Generate a data set table as LaTeX `tabular` environment with a row for each data set.
+
+        Parameters
+        ----------
+        columns : Sequence[ColumnType]
+            The columns of the table.
+        id_dataset : Sequence[int] | None, optional
+            IDs of the data sets, by default None, i.e., all IDs in `datasets_index`.
+        type_experiment : str | SequenceNotStr[str] | None, optional
+            Experiment types whose IDs are included in the table, by default None, i.e., all experiment types. `type_experiment` only has an effect if `id_dataset` is None.
+        column_types : SequenceNotStr[str] | None, optional
+            LaTeX column type to be inserted into `\\begin{tabular}{...}`, e.g., `c` or `p{1cm}`, by default None. The default column type that is used is `l`.
+        format_columns : str | list[str | None] | dict[ColumnType, str] | None, optional
+            Format string for the column labels, by default None.
+        format_total : str | SequenceNotStr[str | None] | Mapping[ColumnType, str | None] | None, optional
+            Format string for the cells in the row for total values, by default None.
+        sort_by : str | SequenceNotStr[str] | None, optional
+            Column(s) by which the rows are sorted, by default None, i.e., no sorting.
+        sort_ascending : bool | Sequence[bool | None] | None, optional
+            Sort order of the column(s), by default None, i.e., ascending.
+        sparse_columns : Literal["all"] | Sequence[ColumnType] | None, optional
+            Columns in which duplicate adjacent values are to be wrapped with `\\multirow`, by default "all".
+        hlines : ColumnType | Sequence[ColumnType] | None, optional
+            Column(s) for which a horizontal line is inserted after each value, by default None, i.e., not horizontal lines are inserted. If a column is in `hlines` and `sparse_columns`, the line is inserted after the multi-row cell. The horizontal lines extend from the column(s) only to right. The actual command that is used is `\\cline`.
+        highlight : int | Sequence[int] | None, optional
+            Data set IDs which are to be bold-faced, by default None, i.e., no highlights.
+        labels : dict[str, str] | None, optional
+            Labels of the columns, by default None, i.e., default values are chosen for the labels.
+        title : str | None, optional
+            Title to be inserted in the first row of the table, by default None, i.e., no title.
+
+        Returns
+        -------
+        table : pd.DataFrame
+            The table in DataFrame format.
+        table_latex : str
+            The table as LaTeX code.
+        """
+        if id_dataset is None:
+            if type_experiment is None:
+                raise ValueError(
+                    "Please provide either `id_dataset` or `type_experiment`"
+                )
+            else:
+                id_dataset = cast(
+                    Sequence[int],
+                    self.datasets.index.query("type_experiment == @type_experiment")[
+                        "id_dataset"
+                    ].unique(),
+                )  # actually npt.NDArray[np.int_]
+        else:
+            if isinstance(id_dataset, int):
+                id_dataset = [id_dataset]
+
+        return table_data_chi2(
+            columns=columns,
+            datasets_index=self.datasets.index,
+            id_dataset=id_dataset,
+            chi2=self.minimum_value_per_data,
+            normalization=self.normalizations["factor"],
+            num_points_after_cuts=self.num_points,
+            sort_by=sort_by,
+            sort_ascending=sort_ascending,
+            sparse_columns=sparse_columns,
+            hlines=hlines,
+            highlight=highlight,
+            title=title,
+            labels=labels,
+            column_types=column_types,
+            format_columns=format_columns,
+            format_total=format_total,
+        )
 
     def plot_data_breakdown(
         self,
