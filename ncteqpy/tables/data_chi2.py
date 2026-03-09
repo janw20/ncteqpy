@@ -1,5 +1,5 @@
 from __future__ import annotations
-from itertools import zip_longest
+
 import numpy as np
 import pandas as pd
 from typing_extensions import Hashable, Literal, Mapping, Sequence
@@ -47,10 +47,58 @@ def table_data_chi2(
     sparse_columns: Literal["all"] | Sequence[ColumnType] | None = "all",
     hlines: ColumnType | Sequence[ColumnType] | None = None,
     highlight: int | Sequence[int] | None = None,
-    labels: dict[str, str] | None = None,
+    labels: dict[ColumnType, str] | None = None,
     title: str | None = None,
     tabular_options: str | None = None,
 ) -> tuple[pd.DataFrame, str]:
+    """Generate a data set table as LaTeX `tabular` environment with a row for each data set.
+
+    Parameters
+    ----------
+    columns : Sequence[ColumnType]
+        The columns of the table.
+    datasets_index : pd.DataFrame
+        Datasets in the format of `nc.Datasets.index`.
+    id_dataset : Sequence[int] | None, optional
+        IDs of the data sets, by default None, i.e., all IDs in `datasets_index`.
+    chi2 : pd.Series[float] | None, optional
+        Total χ² of each data set, by default None.
+    normalization : pd.Series[float] | None, optional
+        Normalization factor for each data set, by default None.
+    num_points_after_cuts : pd.Series[int] | None, optional
+        Number of points after cuts for each data set, by default None. The number of points before cuts is taken from `datasets_index`.
+    column_types : SequenceNotStr[str] | None, optional
+        LaTeX column type to be inserted into `\\begin{tabular}{...}`, e.g., `c` or `p{1cm}`, by default None. The default column type that is used is `l`.
+    format_columns : str | list[str | None] | dict[ColumnType, str] | None, optional
+        Format string for the column labels, by default None.
+    format_total : str | SequenceNotStr[str | None] | Mapping[ColumnType, str   None] | None, optional
+        Format string for the cells in the row for total values, by default None.
+    sort_by : str | SequenceNotStr[str] | None, optional
+        Column(s) by which the rows are sorted, by default None, i.e., no sorting.
+    sort_ascending : bool | Sequence[bool  |  None] | None, optional
+        Sort order of the column(s), by default None, i.e., ascending.
+    sort_order : list[Hashable] | list[tuple[Hashable, ...]] | dict[str, list[Hashable]] | None, optional
+        Order of the columns, by default None. Not implemented yet.
+    sparse_columns : Literal["all"] | Sequence[ColumnType] | None, optional
+        Columns in which duplicate adjacent values are to be wrapped with `\\multirow`, by default "all".
+    hlines : ColumnType | Sequence[ColumnType] | None, optional
+        Column(s) for which a horizontal line is inserted after each value, by default None, i.e., not horizontal lines are inserted. If a column is in `hlines` and `sparse_columns`, the line is inserted after the multi-row cell. The horizontal lines extend from the column(s) only to right. The actual command that is used is `\\cline`.
+    highlight : int | Sequence[int] | None, optional
+        Data set IDs which are to be bold-faced, by default None, i.e., no highlights.
+    labels : dict[str, str] | None, optional
+        Labels of the columns, by default None, i.e., default values are chosen for the labels.
+    title : str | None, optional
+        Title to be inserted in the first row of the table, by default None, i.e., no title.
+    tabular_options : str | None, optional
+        Options to pass to `\\tabular`, by default None. Not implemented yet.
+
+    Returns
+    -------
+    table : pd.DataFrame
+        The table in DataFrame format.
+    table_latex : str
+        The table as LaTeX code.
+    """
     columns = list(columns)
 
     datasets_index_filtered = (
@@ -171,12 +219,14 @@ def table_data_chi2(
     else:
         raise ValueError("format_total must be list, dict or None")
 
+    # DataFrame that represents the table, i.e., containing only strings
     table = pd.DataFrame(
         columns=columns, index=datasets_index_filtered.index, dtype=str
     )
 
     total: list[str] = []
 
+    # determine the columns of the table and the total row
     for col in columns:
         if col == "id_dataset":
             if highlight is not None:
@@ -335,6 +385,7 @@ def table_data_chi2(
             )
             total.append("")
 
+    # deduplicate adjacent row values in each column and replace each first occurrence with a \multirow invocation
     if sparse_columns is not None:
         if sparse_columns == "all":
             all_sparse_columns = [
@@ -441,6 +492,7 @@ def table_data_chi2(
 
         hlines.sort(key=columns.index)
 
+    # for the columns in `hlines`, add a horizontal line after the deduplicated values
     first_row = True
     for row in table.astype(str).itertuples(index=False):
         if not first_row and hlines is not None:
