@@ -36,6 +36,8 @@ class Datasets(jaml.YAMLWrapper):
 
     _cuts: Cuts | None = None
     _index: pd.DataFrame | None = None
+    _labels_x: pd.DataFrame | None = None
+    _labels_y: pd.DataFrame | None = None
     _points: pd.DataFrame | None = None
     _points_after_cuts: pd.DataFrame | None = None
     _num_points: pd.Series[int] | None = None
@@ -100,6 +102,24 @@ class Datasets(jaml.YAMLWrapper):
         assert self._index is not None
 
         return self._index
+
+    @property
+    def labels_x(self) -> pd.DataFrame:
+        if self._labels_x is None or self._yaml_changed():
+            self._load_labels()
+
+        assert self._labels_x is not None
+
+        return self._labels_x
+
+    @property
+    def labels_y(self) -> pd.DataFrame:
+        if self._labels_y is None or self._yaml_changed():
+            self._load_labels()
+
+        assert self._labels_y is not None
+
+        return self._labels_y
 
     @property
     def points(self) -> pd.DataFrame:
@@ -436,9 +456,11 @@ class Datasets(jaml.YAMLWrapper):
                     **info,
                     **dict(zip(grid_row_labels, grid_row)),
                     # add data column that holds the actual observable
-                    "data": float(grid_row[
-                        grid_row_labels.index(labels.data_yaml_to_py[observable])
-                    ]),
+                    "data": float(
+                        grid_row[
+                            grid_row_labels.index(labels.data_yaml_to_py[observable])
+                        ]
+                    ),
                 }
                 for grid_row in cast(
                     list[list[float]], jaml.nested_get(data, ["GridSpec", "Grid"])
@@ -620,11 +642,18 @@ class Datasets(jaml.YAMLWrapper):
         index_pattern = jaml.Pattern(
             {
                 "Description": {
-                    "TypeExp": None,
-                    "FinalState": None,
                     "IDDataSet": None,
+                    "TypeExp": None,
+                    "Reaction": None,
+                    "Experiment": None,
+                    "Collaboration": None,
+                    "CiteKey": None,
+                    "FinalState": None,
+                    "Observable": None,
+                    "SqrtS": None,
                     "AZValues1": None,
                     "AZValues2": None,
+                    "Reference": None,
                 },
                 "GridSpec": {
                     "NumberOfCorrSysErr": None,
@@ -668,11 +697,20 @@ class Datasets(jaml.YAMLWrapper):
                     "type_experiment": jaml.nested_get(
                         data, ["Description", "TypeExp"]
                     ),
+                    "reaction": jaml.nested_get(data, ["Description", "Reaction"]),
+                    "experiment": jaml.nested_get(data, ["Description", "Experiment"]),
+                    "collaboration": jaml.nested_get(
+                        data, ["Description", "Collaboration"]
+                    ),
+                    "reference": jaml.nested_get(data, ["Description", "Reference"]),
+                    "cite_key": jaml.nested_get(data, ["Description", "CiteKey"]),
                     "A1": az1[0],
                     "Z1": az1[1],
                     "A2": az2[0],
                     "Z2": az2[1],
                     "final_state": jaml.nested_get(data, ["Description", "FinalState"]),
+                    "observable": jaml.nested_get(data, ["Description", "Observable"]),
+                    "sqrt_s": jaml.nested_get(data, ["Description", "SqrtS"]),
                     "correlated_systematic_uncertainties": jaml.nested_get(
                         data, ["GridSpec", "NumberOfCorrSysErr"]
                     ),
@@ -747,6 +785,65 @@ class Datasets(jaml.YAMLWrapper):
         self._index.loc[:, ["A1", "Z1", "A2", "Z2"]] = self._index.loc[
             :, ["A1", "Z1", "A2", "Z2"]
         ].fillna(value=np.inf)
+
+    def _load_labels(self) -> None:
+        labels_pattern = jaml.Pattern(
+            {
+                "Description": {
+                    "IDDataSet": None
+                },
+                "Labels": {
+                    "LabelX": None,
+                    "LabelY": None,
+                    "UnitX": None,
+                    "UnitY": None,
+                },
+            }
+        )
+        labels_yaml = cast(
+            list[tuple[Path, dict[str, dict[str, Any]]]],
+            self._load_yaml(labels_pattern),
+        )
+
+        self._labels_x = pd.DataFrame.from_records(
+            [
+                (
+                    l[1]["Description"]["IDDataSet"],
+                    l[0],
+                    *(
+                        l[1].get("Labels", {}).get("LabelX", {}).get(v, np.nan)
+                        for v in labels.kinvars_yaml_to_py.keys()
+                    ),
+                    *(
+                        l[1].get("Labels", {}).get("UnitX", {}).get(v, np.nan)
+                        for v in labels.kinvars_yaml_to_py.keys()
+                    ),
+                )
+                for l in labels_yaml if "Description" in l[1] and "IDDataSet" in l[1]["Description"]
+            ],
+            index=[0, 1],
+        )
+        self._labels_x.columns = pd.MultiIndex.from_product(
+            [["LabelX", "UnitX"], list(labels.kinvars_yaml_to_py.values())]
+        )
+        self._labels_x.index.names = ["id_dataset", "path"]
+        self._labels_x.sort_index()
+
+        self._labels_y = pd.DataFrame.from_records(
+            [
+                (
+                    l[1]["Description"]["IDDataSet"],
+                    l[0],
+                    l[1].get("Labels", {}).get("LabelY", np.nan),
+                    l[1].get("Labels", {}).get("UnitY", np.nan),
+                )
+                for l in labels_yaml if "Description" in l[1] and "IDDataSet" in l[1]["Description"]
+            ],
+            index=[0, 1],
+        )
+        self._labels_y.columns = ["LabelY", "UnitY"]
+        self._labels_y.index.names = ["id_dataset", "path"]
+        self._labels_y.sort_index()
 
     def plot_kinematic_coverage(
         self,

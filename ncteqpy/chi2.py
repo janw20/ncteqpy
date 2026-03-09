@@ -627,6 +627,63 @@ class Chi2(jaml.YAMLWrapper):
 
         return self._minimum_S_E
 
+    def table_data(
+        self,
+        columns: SequenceNotStr[str],
+        id_dataset: Sequence[int] | None = None,
+        type_experiment: str | SequenceNotStr[str] | None = None,
+        sort_by: str | SequenceNotStr[str] | None = None,
+        sort_ascending: bool | Sequence[bool | None] | None = None,
+        sort_order: Sequence[Hashable] | Sequence[tuple[Hashable, ...]] | None = None,
+        sparse_columns: Literal["all"] | SequenceNotStr[str] | None = "all",
+        hlines: str | SequenceNotStr[str] | None = None,
+        highlight: int | Sequence[int] | None = None,
+        title: str | None = None,
+        column_types: SequenceNotStr[str] | None = None,
+        labels: dict[str, str] | None = None,
+        format_columns: str | list[str | None] | dict[str, str] | None = None,
+        format_total: str | list[str | None] | dict[str, str] | None = None,
+    ) -> tuple[pd.DataFrame, str]:
+        if id_dataset is None:
+            if type_experiment is None:
+                raise ValueError(
+                    "Please provide either `id_dataset` or `type_experiment`"
+                )
+            else:
+                chi2 = self.minimum_points.query("type_experiment == @type_experiment")
+                id_dataset = cast(
+                    Sequence[int],
+                    self.datasets.index.query("type_experiment == @type_experiment")[
+                        "id_dataset"
+                    ].unique(),
+                )  # actually npt.NDArray[np.int_]
+        else:
+            if isinstance(id_dataset, int):
+                id_dataset = [id_dataset]
+            # points = self.minimum_points.query("id_dataset in @id_dataset")
+            # types_experiment = points["type_experiment"].unique()
+
+        return table_data_chi2(
+            columns=columns,
+            datasets_index=self.datasets.index,
+            id_dataset=id_dataset,
+            # type_experiment=type_experiment,
+            chi2=self.minimum_value_per_data,
+            normalization=self.normalizations["factor"],
+            num_points_after_cuts=self.num_points,
+            sort_by=sort_by,
+            sort_ascending=sort_ascending,
+            sort_order=sort_order,
+            sparse_columns=sparse_columns,
+            hlines=hlines,
+            highlight=highlight,
+            title=title,
+            labels=labels,
+            column_types=column_types,
+            format_columns=format_columns,
+            format_total=format_total,
+        )
+
     def plot_data_breakdown(
         self,
         ax: Axes,

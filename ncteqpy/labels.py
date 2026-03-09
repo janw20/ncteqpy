@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import StringIO
+import re
 from typing import cast
 
 import numpy as np
@@ -98,6 +99,20 @@ data_yaml_to_py = {
     **kinvars_yaml_to_py,
     **theory_yaml_to_py,
     **uncertainties_yaml_to_py,
+}
+
+final_state_py_to_tex = {
+    "ETAX": r"\eta",
+    "PI0X": r"\pi^0",
+    "CHARGEDPI": r"\pi^\pm",
+    "CHARGEDK": r"K^\pm",
+    "PROMPTD0": r"\text{prompt} D^0",
+    "INCLUSIVEJPSI": r"\text{incl.} J/\psi",
+    "INCLUSIVEPSI2S": r"\text{incl.} \psi(2S)",
+    "INCLUSIVEY1S": r"\text{incl.} \Upsilon(1S)",
+    "WPLUS": r"W^+",
+    "WMINUS": r"W^-",
+    "Z0": r"Z",
 }
 
 parameters_cj15_py_to_tex = {
@@ -206,6 +221,191 @@ parameters_cj15_py_to_tex = {
     "dboub_b4": r"b_4^{d̅/u̅}",
     "dboub_b5": r"b_5^{d̅/u̅}",
 }
+
+
+reaction_particle_to_latex = {
+    "GAMMA": "\\gamma",
+    "GAMMA*": "\\gamma^*",
+    "GLUON": "g",
+    "W+": "W^+",
+    "W-": "W^-",
+    "W+-": "W^\\pm",
+    "Z0": "Z",
+    "HIGGS": "H",
+    "LEPTON+": "\\ell^+",
+    "LEPTON-": "\\ell^-",
+    "LEPTON+-": "\\ell^\\pm",
+    "E+": "e^+",
+    "E-": "e^-",
+    "MU+": "\\mu^+",
+    "MU-": "\\mu^-",
+    "MU+-": "\\mu^\\pm",
+    "TAU+": "\\tau^+",
+    "TAU-": "\\tau^-",
+    "TAU+-": "\\tau^\\pm",
+    "NU": "\\nu",
+    "NUBAR": "\\bar{\\nu}",
+    "NUE": "\\nu_e",
+    "NUEBAR": "\\bar{\\nu}_e",
+    "NUMU": "\\nu_\\mu",
+    "NUMUBAR": "\\bar{\\nu}_\\mu",
+    "NUTAU": "\\nu_\\tau",
+    "NUTAUBAR": "\\bar{\\nu}_\\tau",
+    "PI+": "\\pi^+",
+    "PI-": "\\pi^-",
+    "PI+-": "\\pi^\\pm",
+    "PI0": "\\pi^0",
+    "PION": "\\pi",
+    "ETA": "\\eta",
+    "K+": "K^+",
+    "K-": "K^-",
+    "K+-": "K^\\pm",
+    "K0": "K^0",
+    "KBAR0": "\\bar{K}^0",
+    "D+": "D^+",
+    "D-": "D^-",
+    "D+-": "D^\\pm",
+    "D0": "D^0",
+    "DBAR0": "\\bar{D}^0",
+    "D/S+": "D_s^+",
+    "D/S-": "D_s^-",
+    "D/S+-": "D_s^\\pm",
+    "D*/S+": "D_s^{*+}",
+    "D*/S-": "D_s^{*-}",
+    "D*/S+-": "D_s^{*\\pm}",
+    "B+": "B^+",
+    "B-": "B^-",
+    "B+-": "B^\\pm",
+    "B0": "B^0",
+    "B*0": "B^{*0}",
+    "B*+": "B^{*+}",
+    "B*-": "B^{*-}",
+    "B*+-": "B^{*\\pm}",
+    "B/S": "B_s",
+    "B*/S": "B_s^*",
+    "B/C+": "B_c^+",
+    "B/C-": "B_c^-",
+    "B/C+-": "B_c^\\pm",
+    "ETA/C": "\\eta_c",
+    "J/PSI": "J/\\psi",
+    "PSI(2S)": "\\psi(2S)",
+    "UPSI(1S)": "\\Upsilon(1S)",
+    "P": "p",
+    "N": "n",
+    "NBAR": "\\bar{p}",
+    "PBAR": "\\bar{n}",
+    "X": "X",
+    "AG": "\\text{Ag}",
+    "AL": "\\text{Al}",
+    "AR": "\\text{Ar}",
+    "BE": "\\text{Be}",
+    "BI": "\\text{Bi}",
+    "BOR": "\\text{B}",
+    "BR": "\\text{Br}",
+    "C": "\\text{C}",
+    "CA": "\\text{Ca}",
+    "CD": "\\text{Cd}",
+    "CE": "\\text{Ce}",
+    "CL": "\\text{Cl}",
+    "CO": "\\text{Co}",
+    "CR": "\\text{Cr}",
+    "CU": "\\text{Cu}",
+    "DEUT": "\\text{D}",
+    "FE": "\\text{Fe}",
+    "FL": "\\text{F}",
+    "GD": "\\text{Gd}",
+    "GE": "\\text{Ge}",
+    "HE": "\\text{He}",
+    "HF": "\\text{Hf}",
+    "HO": "\\text{Ho}",
+    "I": "\\text{I}",
+    "IN": "\\text{In}",
+    "KK": "\\text{K}",
+    "KR": "\\text{Kr}",
+    "LA": "\\text{La}",
+    "LI": "\\text{Li}",
+    "MG": "\\text{Mg}",
+    "MN": "\\text{Mn}",
+    "MO": "\\text{Mo}",
+    "NA": "\\text{Na}",
+    "NB": "\\text{Nb}",
+    "NE": "\\text{Ne}",
+    "NI": "\\text{Ni}",
+    "NIT": "\\text{N}",
+    "O": "\\text{O}",
+    "PB": "\\text{Pb}",
+    "PD": "\\text{Pd}",
+    "PH": "\\text{P}",
+    "PT": "\\text{Pt}",
+    "RE": "\\text{Re}",
+    "RU": "\\text{Ru}",
+    "SC": "\\text{Sc}",
+    "SE": "\\text{Se}",
+    "SI": "\\text{Si}",
+    "SM": "\\text{Sm}",
+    "SN": "\\text{Sn}",
+    "SR": "\\text{Sr}",
+    "SU": "\\text{S}",
+    "TA": "\\text{Ta}",
+    "TB": "\\text{Tb}",
+    "TE": "\\text{Te}",
+    "TH": "\\text{Th}",
+    "TI": "\\text{Ti}",
+    "TM": "\\text{Tm}",
+    "TRIT": "\\text{T}",
+    "U": "\\text{U}",
+    "VA": "\\text{Va}",
+    "WT": "\\text{W}",
+    "XE": "\\text{Xe}",
+    "YB": "\\text{Yb}",
+    "YT": "\\text{Y}",
+    "ZN": "\\text{Zn}",
+    "ZR": "\\text{Zr}",
+}
+
+
+def reaction_to_latex(reaction: str) -> str:
+    reaction_single = reaction.split(" / ")
+
+    if len(reaction_single) > 2:
+        raise ValueError("reaction can only have one numerator and denominator")
+    
+    reaction_latex: list[str] = []
+    for r in reaction_single:
+        reaction_latex.append("")
+        prev_was_particle = False
+        for term in r.split():
+            if term == "-->":
+                reaction_latex[-1] += " \\,\\to\\,"
+                prev_was_particle = False
+            elif term == "<":
+                reaction_latex[-1] += "\\,(\\to\\,"
+                prev_was_particle = False
+            elif term == ">":
+                reaction_latex[-1] += ")"
+                prev_was_particle = True
+            elif term in reaction_particle_to_latex:
+                if prev_was_particle:
+                    reaction_latex[-1] += "+"
+
+                reaction_latex[-1] += reaction_particle_to_latex[term]
+                
+                prev_was_particle = True
+            elif (m := re.match(r"(.*?)([0-9]+)", term)):
+                if prev_was_particle:
+                    reaction_latex[-1] += "+"
+                
+                if m.group(1) in reaction_particle_to_latex:
+                    reaction_latex[-1] += "{}^{" + m.group(2) + "}" + reaction_particle_to_latex[m.group(1)]
+                
+                prev_was_particle = True
+            else:
+                raise ValueError(f"Unknown term '{term}' reaction {reaction}")
+            
+    if len(reaction_latex) == 1:
+        return reaction_latex[0]
+    else:
+        return "\\dfrac{" + reaction_latex[0] + "}{" + reaction_latex[1] + "}"
 
 
 def nucleus_to_latex(
