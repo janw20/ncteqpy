@@ -4,6 +4,7 @@ import os
 import re
 from pathlib import Path
 from typing import Iterable, TypedDict, cast
+import pandas as pd
 
 import sympy as sp
 
@@ -22,6 +23,7 @@ class Settings(jaml.YAMLWrapper):
     _datasets: list[Path] | None = None
     _all_parameters: list[str] | None = None
     _open_parameters: list[str] | None = None
+    _parameters_input: pd.Series | None = None
     _closed_parameters: list[str] | None = None
     _cuts: Cuts | None = None
 
@@ -290,60 +292,58 @@ class Settings(jaml.YAMLWrapper):
         return self._cuts
 
     def _read_parameters(self) -> None:
+
+        dict_parametrisations={"NCTEQ26":"InputParamnCTEQ26",
+                               "CJ15":"InputParamCJ"
+                               }
         # read all lines inside the FitParams tag
-        tag = "FitParams"
-        with open(self.paths[0], "r") as f:
+        #tag = "FitParams"
+        #with open(self.paths[0], "r") as f:
+#
+        #    inside_tag = False
+        #    indentation = -1
+        #    lines = []
+        #    for line in f:
+        #        line_stripped = line.lstrip()
+#
+        #        if not inside_tag:
+#
+        #            if line_stripped.startswith(tag + ":"):
+        #                inside_tag = True
+        #                indentation = len(line) - len(line_stripped)
+#
+        #        else:
+        #            line_without_indentation = line[indentation:]
+#
+        #            # break when encountering a non-comment line containing a tag that is not at a higher or at the same level of indentation as the FitParams tag
+        #            is_comment = line.lstrip().startswith("#")
+        #            is_empty = line.isspace()
+        #            is_same_level = len(line_without_indentation) == len(line.lstrip())
+        #            is_higher_level = not line[:indentation].isspace()
+#
+        #            if (
+        #                not is_comment
+        #                and not is_empty
+        #                and (is_higher_level or is_same_level)
+        #            ):
+        #                break
+#
+        #            lines.append(line)
 
-            inside_tag = False
-            indentation = -1
-            lines = []
-            for line in f:
-                line_stripped = line.lstrip()
 
-                if not inside_tag:
+        param_str=cast(dict[str, dict[str,str]], self._load_yaml(jaml.Pattern({"Parameterization": None})))["Parameterization"]["Functional"]
+        pattern_parametrisation = jaml.Pattern({dict_parametrisations[param_str]: None})
+        yaml = self._load_yaml(pattern_parametrisation)[dict_parametrisations[param_str]]
+        
+        self._all_parameters=[p[0] for k in cast(dict[str, dict[str,str]], yaml).keys() if k not in ['NbParameters', 'NbOfInputFlavors', 'Amode', 'DeuteronPDFs'] for p in yaml[k] ]
 
-                    if line_stripped.startswith(tag + ":"):
-                        inside_tag = True
-                        indentation = len(line) - len(line_stripped)
+        self._open_parameters =[p[0] for p in cast(dict[str, dict[str,str]], self._load_yaml(jaml.Pattern({"Parameterization": None})))["Parameterization"]['FitParams'] if p[0] in self._all_parameters]
 
-                else:
-                    line_without_indentation = line[indentation:]
+        self._closed_parameters=[p for p in self._all_parameters if p not in self._open_parameters]
 
-                    # break when encountering a non-comment line containing a tag that is not at a higher or at the same level of indentation as the FitParams tag
-                    is_comment = line.lstrip().startswith("#")
-                    is_empty = line.isspace()
-                    is_same_level = len(line_without_indentation) == len(line.lstrip())
-                    is_higher_level = not line[:indentation].isspace()
-
-                    if (
-                        not is_comment
-                        and not is_empty
-                        and (is_higher_level or is_same_level)
-                    ):
-                        break
-
-                    lines.append(line)
-
-        self._all_parameters = []
-        self._open_parameters = []
-        self._closed_parameters = []
-
-        pattern = re.compile(
-            r"(#*)\s*\[(\w+)\s*,\s*\[[\-0-9eE.,\s]*\]\s*,\s*(?:FREE|BOUNDED)\]"
-        )  # pain
-        for line in lines:
-            for match in pattern.finditer(line):
-                hash = match.group(1)
-                param = match.group(2)
-
-                self._all_parameters.append(param)
-                if hash:
-                    self._closed_parameters.append(param)
-                else:
-                    self._open_parameters.append(param)
-
-        assert set(self._all_parameters) == set(
-            self._open_parameters + self._closed_parameters
+        self._parameters_input=pd.Series(
+            [float(p[1]) for k in cast(dict[str, dict[str,str]], yaml).keys() if k not in ['NbParameters', 'NbOfInputFlavors', 'Amode', 'DeuteronPDFs'] for p in yaml[k]], 
+            index = [p[0] for k in cast(dict[str, dict[str,str]], yaml).keys() if k not in ['NbParameters', 'NbOfInputFlavors', 'Amode', 'DeuteronPDFs'] for p in yaml[k]] 
         )
 
     @property
@@ -372,3 +372,15 @@ class Settings(jaml.YAMLWrapper):
         assert self._closed_parameters is not None
 
         return self._closed_parameters
+
+
+    @property
+    def parameters_input(self) -> list[str]:
+        if self._parameters_input is None or self._yaml_changed():
+            self._read_parameters()
+
+        
+
+        assert self._parameters_input is not None
+
+        return self._parameters_input

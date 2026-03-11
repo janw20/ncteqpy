@@ -7,7 +7,8 @@ import numpy.typing as npt
 import pandas as pd
 from matplotlib.axes import Axes
 from matplotlib.patches import Patch
-from typing_extensions import Any, Iterator, Literal, Sequence, cast, overload
+from typing_extensions import Any, Iterator, Literal, Sequence, cast, overload, List
+import math 
 
 import ncteqpy.data as data
 import ncteqpy.jaml as jaml
@@ -24,6 +25,7 @@ from ncteqpy.plot.chi2_histograms import (
 from ncteqpy.plot.data_vs_theory import DataVsTheoryType
 from ncteqpy.plot.grid import AxesGrid
 from ncteqpy.plot.util import AdditionalLegend
+from ncteqpy.tables.parameter_chi2 import table_parameter_settings
 
 LegendPos = (
     Literal["upper right", "upper left", "lower left", "lower right"] | int | None
@@ -683,6 +685,91 @@ class Chi2(jaml.YAMLWrapper):
             format_columns=format_columns,
             format_total=format_total,
         )
+
+    def table_parameter(
+        self,
+        flavours: Literal["uv","dv","g","ssb","ubdb","dboub"] | List[Literal["uv","dv","g","ssb","ubdb","dboub"]],
+        settings: Settings,
+        column_types:  SequenceNotStr[str] | None = None,
+        format_columns: str | list[str | None] | dict[Literal["p","a","b"], str] | None = None,
+        sort_ascending: bool | Sequence[bool | None] | None = None,
+        highlight: dict[Literal["j", "p", "a", "b"], int | List[int]] | Literal["open"] | None = "open",        
+        labels: dict[str, str] | None = None,
+        format_data: str | None = None,
+        alignment: Literal["r", "l", "c"] = "r",
+        #labels: List[str] | None,
+        width: float = 0.95, 
+        n_rows: int | None = None,
+        n_cols: int | None =None,
+        vspace: str="1em",
+        hspace: str = "\\hfill",
+        caption: str | None = None
+    ) -> tuple[pd.DataFrame, str]:
+        
+
+        n=len(flavours)
+
+        if n_rows and n_cols:
+                raise ValueError(
+                    "Please provide either `n_cols` or `n_rows`"
+                )
+    
+        elif n_rows:
+            if n_rows>n:
+                print("n_rows is larger than number of flavours. n_rows will be set to number of flavours." )
+                n_rows=n
+            
+            n_cols = math.ceil(n / n_rows)
+        elif n_cols:
+            if n_cols>n:
+                print("n_cols is larger than number of flavours. n_cols will be set to number of flavours." )
+                n_cols=n
+            
+            n_rows = math.ceil(n / n_cols)
+        else:
+            n_cols=n
+            n_rows=1
+
+        width_subtable = f"{width / n_cols:.2f}\\textwidth"
+
+        table_string= "\\begin{table}[t] \n \centering \n"
+
+        if caption:
+            table_string += "\\caption{"+f"{caption}"+"}\n"
+        
+        for i, flavour in enumerate(flavours):
+            
+            col = i % n_cols
+
+            tab_flavour= table_parameter_settings(
+                flavour=flavour,
+                settings=settings,
+                minimum=self,
+                format_columns=format_columns,
+                sort_ascending=sort_ascending,
+                highlight=highlight,
+                labels=labels,
+                column_types= column_types,
+                format_data= format_data,
+                alignment=alignment,
+                width = width_subtable,
+            )[1]
+
+            table_string+= tab_flavour
+                    # Separators
+            if i < n - 1:
+                if col < n_cols - 1:
+                    if hspace=="\\hfill":
+                        table_string+=f"{hspace}%\n"
+                    else:
+                        table_string+="\\hspace{"+f"{hspace}"+"}\n"
+                else:
+                    table_string+=f"\\vspace{{{vspace}}}\n"
+
+
+        table_string+="\\end{table}"
+        
+        return table_string
 
     def plot_data_breakdown(
         self,
