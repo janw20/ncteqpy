@@ -47,7 +47,7 @@ Q2_dis = x / (1 - x) * (W2 - m_proton**2)
 Q2_sih = sp.Max(pT / 2, 1.3) ** 2
 x_sih = sp.sqrt(Q2) / sqrt_s * sp.exp(-y)
 
-x_wzprod = Q2 / sqrt_s * sp.exp(-eta)
+x_wzprod = sp.sqrt(Q2) / sqrt_s * sp.exp(-eta)
 x_wzprod_bin = sp.sqrt(Q2) / sqrt_s * sp.exp(-(eta_min + eta_max) / 2)
 
 m_charm = 1.3
