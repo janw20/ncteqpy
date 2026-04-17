@@ -414,12 +414,30 @@ class Chi2(jaml.YAMLWrapper):
                             "id_dataset": id_dataset,
                             "factor": norm_info["Value"],
                             "penalty": norm_info["Penalty"],
+                            "factor": norm_info["Value"],
+                            # the total penalty for the whole group
+                            "penalty_group_total": norm_info["Penalty"],
                             "scheme": norm_info["Scheme"],
                         }
                     )
 
             self._normalizations = pd.DataFrame.from_records(
                 norm_records, index="id_dataset"
+            )
+
+            # It is ambiguous how to distribute the penalty between the datasets. Thus, we first implement the variant in which the penalty of each data set is the total penalty of the group divided by the number of data sets in the group, ...
+            self._normalizations["penalty_dataset_even"] = self._normalizations[
+                "penalty_group_total"
+            ] / self._normalizations["id_dataset_group"].apply(len)
+
+            # ... and second, the variant in which the total penalty of the group is distributed between each data set proportionally to its χ² without penalty.
+            chi2_by_group = self.normalizations["id_dataset_group"].apply(
+                lambda group: self.minimum_value_per_data[group].sum()
+            )
+            self._normalizations["penalty_dataset_proportional"] = (
+                self.minimum_value_per_data.loc[chi2_by_group.index]
+                / chi2_by_group
+                * self._normalizations["penalty_group_total"]
             )
 
         return self._normalizations
@@ -729,7 +747,10 @@ class Chi2(jaml.YAMLWrapper):
         bar_props_groupby: DatasetsGroupBy | None = None,
         bar_order_groupby: str | list[str] | None = None,
         bar_labels: Literal["num_points", "chi2"] = "num_points",
+        add_norm_penalty: Literal["bar_top", "bar_bottom"] | None = "bar_top",
+        norm_penalty_variant: Literal["even", "proportional"] = "proportional",
         kwargs_bar: dict[str, Any] = {},
+        kwargs_bar_norm_penalty: dict[str, Any] = {},
         kwargs_bar_label: dict[str, Any] = {},
         kwargs_chi2_line_1: dict[str, Any] = {},
         kwargs_legend: dict[str, Any] = {},
@@ -756,6 +777,14 @@ class Chi2(jaml.YAMLWrapper):
             How to group the properties (color etc.) of each bar, by default no grouping, i.e., all bars get the same properties.
         bar_labels : Literal["num_points", "chi2"], optional
             If the bars should be labeled with the number of points ("num_points") or the χ² value ("chi2"), by default "num_points".
+        add_norm_penalty : Literal["bar_top", "bar_bottom"] | None, optional
+            If and where the normalization penalty is added to the bars, by default "bar_top". "bar_bottom" is not implemented yet.
+        norm_penalty_variant : Literal["even", "proportional"], optional
+            How to distribute the normalization penalty across data sets (this is ambiguous for data sets that share their normalization). "even" distributes the penalty evenly between data sets so that every data set gets the same penalty. "proportional" distributes the penalty between the data sets proportional to the χ² that does not yet include the penalty of each data set. The default is "proportional".
+        kwargs_bar : dict[str, Any], optional
+            Keyword arguments passed to `plt.Axes.bar` or `plt.Axes.barh` when plotting the bars with normalization penalty.
+        kwargs_bar_norm_penalty : dict[str, Any], optional
+            Keyword arguments passed to `plt.Axes.bar` or `plt.Axes.barh` when plotting the bars with normalization penalty.
         kwargs_bar : dict[str, Any], optional
             Keyword arguments to pass to `plt.Axes.bar` or `plt.Axes.barh`.
         kwargs_bar_label : dict[str, Any], optional
@@ -771,15 +800,42 @@ class Chi2(jaml.YAMLWrapper):
         elif id_dataset is not None:
             id_dataset = list(id_dataset)
 
+        # FIXME: this needs to be removed as soon as ncteqpp-2.0!44 is merged
         chi2 = (
-            self.minimum_value_per_data.loc[id_dataset]
+            self.minimum_value_per_data.loc[
+                self.minimum_value_per_data.index.isin(id_dataset)
+            ].add(
+                -self.normalizations.loc[
+                    self.normalizations.index.isin(id_dataset), "penalty_group_total"
+                ],
+                fill_value=0,
+            )
             if id_dataset is not None
-            else self.minimum_value_per_data
+            else self.minimum_value_per_data.add(
+                -self.normalizations["penalty_group_total"], fill_value=0
+            )
+        )
+
+        penalty_col = f"penalty_dataset_{norm_penalty_variant}"
+
+        chi2_with_penalty = (
+            chi2.add(
+                self.normalizations.loc[
+                    self.normalizations.index.isin(id_dataset), penalty_col
+                ],
+                fill_value=0,
+            )
+            if id_dataset is not None
+            else chi2.add(
+                self.normalizations[penalty_col],
+                fill_value=0,
+            )
         )
 
         plot_chi2_data_breakdown(
             ax=ax,
             chi2=chi2,
+            chi2_with_penalty=chi2_with_penalty,
             per_point=per_point,
             num_points=self.num_points,
             chi2_line_1=chi2_line_1,
@@ -789,7 +845,9 @@ class Chi2(jaml.YAMLWrapper):
             bar_props_groupby=bar_props_groupby,
             bar_order_groupby=bar_order_groupby,
             bar_labels=bar_labels,
+            add_norm_penalty=add_norm_penalty,
             kwargs_bar=kwargs_bar,
+            kwargs_bar_norm_penalty=kwargs_bar_norm_penalty,
             kwargs_bar_label=kwargs_bar_label,
             kwargs_chi2_line_1=kwargs_chi2_line_1,
             kwargs_legend=kwargs_legend,
