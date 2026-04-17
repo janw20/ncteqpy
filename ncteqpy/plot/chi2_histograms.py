@@ -17,8 +17,8 @@ from ncteqpy.util import update_kwargs
 def plot_chi2_data_breakdown(
     ax: plt.Axes,
     chi2: pd.Series[float],
-    per_point: bool = True,
     chi2_with_penalty: pd.Series[float],
+    per_point: bool = True,
     bar_orientation: Literal["horizontal", "vertical"] = "vertical",
     num_points: pd.Series[int] | None = None,
     chi2_line_1: bool = True,
