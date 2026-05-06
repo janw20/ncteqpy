@@ -131,7 +131,10 @@ class Chi2(jaml.YAMLWrapper):
             self._snapshots_breakdown_datasets.columns.name = "id_dataset"
             self._snapshots_breakdown_datasets.index.name = "id_snapshot"
 
-            if "nuisanceCorrBreakdown" in snapshots[0]:
+            if (
+                "nuisanceCorrBreakdown" in snapshots[0]
+                and snapshots[0]["nuisanceCorrBreakdown"] is not None
+            ):
                 self._snapshots_breakdown_nuisance = pd.DataFrame.from_records(
                     [
                         {k: np.array(v) for k, v in s["nuisanceCorrBreakdown"].items()}
@@ -573,9 +576,7 @@ class Chi2(jaml.YAMLWrapper):
 
             points_list = []
 
-            for id_dataset, points1_i in points_snapshots.groupby(
-                "id_dataset", sort=True
-            ):
+            for id_dataset, points1_i in points_snapshots.groupby("id_dataset"):
 
                 kinematic_variables = cast(
                     list[str], datasets_index.loc[id_dataset]["kinematic_variables"]
@@ -587,7 +588,9 @@ class Chi2(jaml.YAMLWrapper):
                 points2_i = datasets_points.loc[[id_dataset]].reset_index("id_dataset")
 
                 if not isinstance(kinematic_variables, list):
-                    raise ValueError(f"Expected list for kinematic_variables of data set with ID {id_dataset}, got {kinematic_variables}")
+                    raise ValueError(
+                        f"Expected list for kinematic_variables of data set with ID {id_dataset}, got {kinematic_variables}"
+                    )
 
                 match_cols = (
                     ["id_dataset"]
@@ -596,6 +599,8 @@ class Chi2(jaml.YAMLWrapper):
                     ].to_list()
                     + ["data"]
                 )
+                if "sqrt_s" in match_cols:
+                    match_cols.remove("sqrt_s")
 
                 cols = (
                     match_cols
@@ -604,14 +609,16 @@ class Chi2(jaml.YAMLWrapper):
                 )
 
                 points_list.append(
-                    pd.merge(points1_i, points2_i[cols], how="left", on=match_cols)
+                    pd.merge(
+                        points1_i.reset_index(),
+                        points2_i[cols],
+                        how="left",
+                        on=match_cols,
+                    )
                 )
-            self._minimum_points = pd.concat(points_list)
-            self._minimum_points.index = self.snapshots_breakdown_points.loc[
-                1
-            ].index.copy()
-
-            # assert self._points["unc_tot"].notna().sum() == datasets_points["unc_tot"]
+            self._minimum_points = (
+                pd.concat(points_list).set_index("id_point").sort_index()
+            )
 
             # compute PDF uncertainties for each point
             if self.snapshots_breakdown_points.shape[0] > 2 * len(
@@ -628,7 +635,9 @@ class Chi2(jaml.YAMLWrapper):
                         ("pdf_unc_asym_upper", util.pdf_uncertainty_asym_upper),
                     ):
                         self._minimum_points[f"{col_in}_{col_out}"] = (
-                            self.snapshots_breakdown_points.loc[1:]
+                            self.snapshots_breakdown_points.loc[
+                                self.minimum_snapshot_index :
+                            ]
                             .groupby("id_point")[col_in]
                             .apply(func)
                         )
