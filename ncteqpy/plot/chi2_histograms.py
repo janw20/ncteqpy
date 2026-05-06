@@ -13,9 +13,11 @@ from ncteqpy.plot.grid import AxesGrid
 from ncteqpy.plot.util import AdditionalLegend
 from ncteqpy.util import update_kwargs
 
+
 def plot_chi2_data_breakdown(
     ax: plt.Axes,
     chi2: pd.Series[float],
+    chi2_with_penalty: pd.Series[float],
     per_point: bool = True,
     bar_orientation: Literal["horizontal", "vertical"] = "vertical",
     num_points: pd.Series[int] | None = None,
@@ -25,7 +27,9 @@ def plot_chi2_data_breakdown(
     bar_order_groupby: str | list[str] | None = None,  # TODO?
     bar_props_groupby: DatasetsGroupBy | None = None,
     bar_labels: Literal["num_points", "chi2"] = "num_points",
+    add_norm_penalty: Literal["bar_top", "bar_bottom"] | None = "bar_top",
     kwargs_bar: dict[str, Any] = {},
+    kwargs_bar_norm_penalty: dict[str, Any] = {},
     kwargs_bar_label: dict[str, Any] = {},
     kwargs_chi2_line_1: dict[str, Any] = {},
     kwargs_legend: dict[str, Any] = {},
@@ -38,6 +42,8 @@ def plot_chi2_data_breakdown(
         The axes to plot on.
     chi2 : pd.Series[float]
         `Series` that maps data set ID to χ².
+    chi2_with_penalty : pd.Series[float] | None, optional
+        `Series` that maps data set ID to χ² with normalization penalty.
     per_point : bool, optional
         If χ² per point should be plotted, by default True.
     bar_orientation : Literal["horizontal", "vertical"], optional
@@ -56,8 +62,12 @@ def plot_chi2_data_breakdown(
         How to group the properties (color etc.) of each bar, by default no grouping, i.e., all bars get the same properties.
     bar_labels : Literal["num_points", "chi2"], optional
         If the bars should be labeled with the number of points ("num_points") or the χ² value ("chi2"), by default "num_points".
+    add_norm_penalty : Literal["bar_top", "bar_bottom"] | None, optional
+        If and where the normalization penalty is added to the bars, by default "bar_top". "bar_bottom" is not implemented yet.
     kwargs_bar : dict[str, Any], optional
         Keyword arguments passed to `plt.Axes.bar` or `plt.Axes.barh`.
+    kwargs_bar_norm_penalty : dict[str, Any], optional
+        Keyword arguments passed to `plt.Axes.bar` or `plt.Axes.barh` when plotting the bars with normalization penalty.
     kwargs_bar_label : dict[str, Any], optional
         Keyword arguments passed to `plt.Axes.bar_label`.
     kwargs_chi2_line_1 : dict[str, Any], optional
@@ -83,9 +93,21 @@ def plot_chi2_data_breakdown(
         .copy()
     )
 
+    chi2_with_penalty_grouped = (
+        chi2_with_penalty.sort_index(
+            key=(
+                bar_groupby.sort_key if bar_groupby is not None else None
+            ),  # pyright: ignore [reportArgumentType]
+        )
+        .groupby(bar_grouper, sort=False, dropna=False)
+        .sum()
+        .copy()
+    )
+
     # drop experiments that didn't survive the cuts
     if chi2_drop_0:
         chi2_grouped = chi2_grouped[chi2_grouped > 0.0]
+        chi2_with_penalty_grouped = chi2_with_penalty_grouped.loc[chi2_grouped.index]
 
     num_points_grouped: pd.Series[int] | None = (
         num_points.sort_index(  # pyright: ignore [reportCallIssue]
@@ -113,7 +135,7 @@ def plot_chi2_data_breakdown(
 
     chi2_label = (
         r"$\chi^2_{\text{total}}"
-        + (r"\, / \, N_{\text{points}}" if per_point else "")
+        + (r"\, / \, N_{\text{data}}" if per_point else "")
         + "$"
     )
 
@@ -154,7 +176,8 @@ def plot_chi2_data_breakdown(
         )
 
         chi2_grouped_props = (
-            chi2.sort_index(
+            (chi2_with_penalty if add_norm_penalty is not None else chi2)
+            .sort_index(
                 key=bar_props_groupby.sort_key,  # pyright: ignore [reportArgumentType]
             )
             .groupby(bar_props_groupby.grouper, sort=False, dropna=False)
@@ -198,7 +221,13 @@ def plot_chi2_data_breakdown(
         )
 
     kwargs_bar_default.update(**bar_props)
+    kwargs_bar_norm_penalty_default = kwargs_bar_default.copy() | {"alpha": 0.7}
+
     kwargs_bar_updated = update_kwargs(kwargs_bar_default, kwargs_bar)
+    kwargs_bar_norm_penalty_updated = update_kwargs(
+        update_kwargs(kwargs_bar_norm_penalty_default, kwargs_bar),
+        kwargs_bar_norm_penalty,
+    )
 
     bar_locs = np.arange(num_groups)
 
@@ -214,6 +243,18 @@ def plot_chi2_data_breakdown(
         ),
         **kwargs_bar_updated,
     )
+
+    if add_norm_penalty == "bar_top":
+        bar = ax_barhv(
+            bar_locs,
+            (
+                chi2_with_penalty_grouped / num_points_grouped
+                if per_point and num_points_grouped is not None
+                else chi2_with_penalty_grouped
+            ),
+            **kwargs_bar_norm_penalty_updated,
+            zorder=0.7,
+        )
 
     if bar_labels == "num_points" and num_points_grouped is not None:
         bar_label_values = num_points_grouped.apply("{:.0f}".format)
