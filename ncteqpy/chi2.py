@@ -421,12 +421,11 @@ class Chi2(jaml.YAMLWrapper):
                     norm_records.append(
                         {
                             "id_dataset": id_dataset,
-                            "factor": norm_info["Value"],
-                            "penalty": norm_info["Penalty"],
+                            "id_dataset_group": norm_info["IDs"],
+                            "scheme": norm_info["Scheme"],
                             "factor": norm_info["Value"],
                             # the total penalty for the whole group
                             "penalty_group_total": norm_info["Penalty"],
-                            "scheme": norm_info["Scheme"],
                         }
                     )
 
