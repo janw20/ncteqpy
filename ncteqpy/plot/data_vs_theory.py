@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import logging
-from itertools import zip_longest
-
 import matplotlib.artist as martist
 import matplotlib.pyplot as plt
 import matplotlib.transforms as mtransforms
@@ -15,8 +12,8 @@ from matplotlib.patches import Patch
 from pandas.core.groupby import DataFrameGroupBy
 from typing_extensions import Any, Literal, Sequence, cast, overload
 
-from ncteqpy._typing import SequenceNotStr
 import ncteqpy.labels as nc_labels
+from ncteqpy._typing import SequenceNotStr
 from ncteqpy.plot.util import AdditionalLegend
 from ncteqpy.util import update_kwargs
 
@@ -32,12 +29,14 @@ def plot(
     ],
     x_variable: str | list[str] | Literal["fallback"] | None = "fallback",
     xlabel: str | dict[str, str] | Literal["fallback"] | None = "fallback",
+    xunit: str | dict[str, str] = "",
     ylabel: (
         str
         | Literal["fallback"]
         | None
         | SequenceNotStr[str | Literal["fallback"] | None]
     ) = "fallback",
+    yunit: str = "",
     xscale: str | None = None,
     yscale: str | None = None,
     title: str | None = None,
@@ -92,8 +91,12 @@ def plot(
         The kinematic variable to put on the x axis, by default "fallback". Plots a binned distribution if a list is passed.
     xlabel : str | dict[str, str] | Literal["fallback"] | None, optional
         x label of the plot, by default None.
+    xunit : str | dict[str, str], optional
+        Unit of the x label, by default "".
     ylabel : str | Literal["fallback"] | None, optional
         y label of the plot, by default None.
+    yunit : str, optional
+        Unit of the y label, by default "".
     xscale : str | None, optional
         x scale of the plot, by default no changing of x scale.
     yscale : str | None, optional
@@ -249,7 +252,9 @@ def plot(
         x_variable=x_variable,
         plot_types=plot_types,
         xlabel=xlabel,
+        xunit=xunit,
         ylabel=ylabel,
+        yunit=yunit,
         xscale=xscale,
         yscale=yscale,
         title=title,
@@ -291,13 +296,15 @@ def plot_common(
     plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = [
         "absolute",
     ],
-    xlabel: str | None = None,
+    xlabel: str | dict[str, str] | None = None,
+    xunit: str | dict[str, str] = "",
     ylabel: (
         str
         | Literal["fallback"]
         | None
         | SequenceNotStr[str | Literal["fallback"] | None]
     ) = None,
+    yunit: str = "",
     xscale: str | None = None,
     yscale: str | None = None,
     title: str | None = None,
@@ -523,7 +530,8 @@ def plot_common(
             curve_groupby=curve_gb,
             x_col=x_variable,
             y_col=theory_column,
-            # curve_labels=curve_labels,
+            label=xlabel,
+            unit=xunit,
             y_offset_add=y_offset_add,
             y_offset_mul=y_offset_mul,
             legend_curve_handles=legend_curve_handles,
@@ -538,18 +546,21 @@ def plot_common(
 
     _set_labels(
         ax=ax,
+        x_variable=x_variable,
         x_fallback=x_fallback,
         y_fallback={
             "absolute": "",
-            "data over theory": r"$\dfrac{\text{Data}}{\text{Theory}}$",
-            "theory over data": r"$\dfrac{\text{Theory}}{\text{Data}}$",
+            "data over theory": r"\dfrac{\text{Data}}{\text{Theory}}",
+            "theory over data": r"\dfrac{\text{Theory}}{\text{Data}}",
         },
         x_label=xlabel,
-        kwargs_xlabel=kwargs_xlabel,
+        x_unit=xunit,
         y_label=ylabel,
-        kwargs_ylabel=kwargs_ylabel,
+        y_unit=yunit,
         title=title,
         plot_types=plot_types,
+        kwargs_xlabel=kwargs_xlabel,
+        kwargs_ylabel=kwargs_ylabel,
         kwargs_title=kwargs_title,
     )
 
@@ -865,9 +876,7 @@ def _plot_theory(
                 gaps = np.flatnonzero(x_min[1:] != x_max[:-1])
                 for i_gap in reversed(gaps):
                     x = np.insert(x, i_gap + 1, [x_max[i_gap], np.nan])
-                    y = np.insert(
-                        y, i_gap + 1, [y[i_gap], np.nan]
-                    )
+                    y = np.insert(y, i_gap + 1, [y[i_gap], np.nan])
             else:
                 x = points[x_col].to_numpy()
 
@@ -1111,7 +1120,8 @@ def _add_curve_labels(
     curve_groupby: DataFrameGroupBy,
     x_col: str | list[str],
     y_col: str,
-    curve_labels: list[str] = [],
+    label: str | list[str] | dict[str, str] | None = [],
+    unit: str | list[str] | dict[str, str] = [],
     y_offset_add: float | Sequence[float] = 0,
     y_offset_mul: float | Sequence[float] = 0,
     legend_curve_handles: list[martist.Artist] = [],
@@ -1123,27 +1133,46 @@ def _add_curve_labels(
         ax, types, y_offset_add, y_offset_mul
     )
 
-    curve_labels_fmt = []
-    for i, (value, label) in enumerate(
-        zip_longest(curve_groupby.groups.keys(), curve_labels, fillvalue=None)
-    ):
-        curve_labels_fmt.append(
-            _format_curve_label(
-                variables=curve_groupby.keys,  # pyright: ignore[reportArgumentType]
-                values=value,  # pyright: ignore[reportArgumentType]
-                variables_labels=label,
-                index_group=i,
-                y_offset_add=y_offset_add[0],
-                y_offset_mul=y_offset_mul[0],
+    variables = (
+        str(keys)
+        if not isinstance((keys := curve_groupby.keys), list)
+        else [str(k) for k in keys]
+    )
+
+    if label is None:
+        label = []
+    elif isinstance(label, str):
+        label = [label]
+    # elif isinstance(label, dict):
+    #     label = (
+    #         label[variables]
+    #         if isinstance(variables, str)
+    #         else [label[v] for v in variables]
+    #     )
+
+    curve_labels_fmt: list[list[str]] = []
+    for y_offset_add_i, y_offset_mul_i in zip(y_offset_add, y_offset_mul):
+        curve_labels_fmt.append([])
+
+        for j, value in enumerate(curve_groupby.groups.keys()):
+            curve_labels_fmt[-1].append(
+                _format_curve_label(
+                    variables=variables,
+                    values=value,  # pyright: ignore[reportArgumentType]
+                    variables_labels=label,  # pyright: ignore[reportArgumentType]
+                    variables_units=unit,  # pyright: ignore[reportArgumentType]
+                    index_group=j,
+                    y_offset_add=y_offset_add_i,
+                    y_offset_mul=y_offset_mul_i,
+                )
             )
-        )
 
     if curve_label_position == "legend":
         kwargs_legend_bins_default = {
             "order": 0,
             "parent": ax,
             "handles": legend_curve_handles,
-            "labels": curve_labels_fmt,
+            "labels": curve_labels_fmt[0],
             "fontsize": "small",
         }
         kwargs_legend_bins_updated = update_kwargs(
@@ -1153,68 +1182,77 @@ def _add_curve_labels(
         legend_curves = AdditionalLegend(**kwargs_legend_bins_updated)
         ax[0].add_artist(legend_curves)
     else:
-        for i, (_, points_i) in enumerate(curve_groupby):
-            if curve_label_position in ("annotate above", "annotate right"):
-                if curve_label_position == "annotate above":
-                    kwargs_annotate_curves_default = {
-                        "xytext": (0, 0.3),
-                        "textcoords": "offset fontsize",
-                        "ha": "right",
-                        "fontsize": "small",
-                    }
-                else:
-                    kwargs_annotate_curves_default = {
-                        "xytext": (0.3, 0),
-                        "textcoords": "offset fontsize",
-                        "ha": "left",
-                        "va": "center",
-                        "fontsize": "small",
-                    }
+        for i, (ax_i, type_i, y_offset_add_i, y_offset_mul_i) in enumerate(
+            zip(ax, types, y_offset_add, y_offset_mul)
+        ):
+            for j, (_, points_j) in enumerate(curve_groupby):
+                y_pos = points_j[y_col].iat[-1] if type_i == "absolute" else 1.0
 
-                kwargs_annotate_curves_updated = update_kwargs(
-                    kwargs_annotate_curves_default, kwargs_annotate_curves
-                )
+                if curve_label_position in ("annotate above", "annotate right"):
+                    if curve_label_position == "annotate above":
+                        kwargs_annotate_curves_default = {
+                            "xytext": (0, 0.3),
+                            "textcoords": "offset fontsize",
+                            "ha": "right",
+                            "fontsize": "small",
+                        }
+                    else:
+                        kwargs_annotate_curves_default = {
+                            "xytext": (0.3, 0),
+                            "textcoords": "offset fontsize",
+                            "ha": "left",
+                            "va": "center",
+                            "fontsize": "small",
+                        }
 
-                y_offset_factor = 10 ** (i * y_offset_mul[0])
-                y_offset_summand = i * y_offset_add[0]
+                    kwargs_annotate_curves_updated = update_kwargs(
+                        kwargs_annotate_curves_default, kwargs_annotate_curves
+                    )
 
-                ax[0].annotate(
-                    curve_labels_fmt[i],
-                    (
-                        points_i[x_col].iloc[-1].max(),
-                        points_i[y_col].iloc[-1] * y_offset_factor + y_offset_summand,
-                    ),
-                    **kwargs_annotate_curves_updated,
-                )
+                    y_offset_factor = 10 ** (j * y_offset_mul_i)
+                    y_offset_summand = j * y_offset_add_i
 
-            elif curve_label_position == "ticks":
-                ax_ticks = ax[0].secondary_yaxis("right")
-                # fmt: off
-                ax_ticks.spines["right"].set_visible(False)  # pyright: ignore[reportAttributeAccessIssue]
-                # fmt: on
-                ax_ticks.tick_params("y", which="minor", right=False, labelright=False)
-                ax_ticks.tick_params("y", which="major", right=True, labelright=True)
+                    ax_i.annotate(
+                        curve_labels_fmt[i][j],
+                        (
+                            points_j[x_col].iloc[-1].max(),
+                            y_pos * y_offset_factor + y_offset_summand,
+                        ),
+                        **kwargs_annotate_curves_updated,
+                    )
 
-                kwargs_tick_curves_default = {"fontsize": "small"}
-                kwargs_tick_curves_updated = update_kwargs(
-                    kwargs_tick_curves_default, kwargs_tick_curves, i
-                )
+                elif curve_label_position == "ticks":
+                    ax_ticks = ax_i.secondary_yaxis("right")
+                    # fmt: off
+                    ax_ticks.spines["right"].set_visible(False)  # pyright: ignore[reportAttributeAccessIssue]
+                    # fmt: on
+                    ax_ticks.tick_params(
+                        "y", which="minor", right=False, labelright=False
+                    )
+                    ax_ticks.tick_params(
+                        "y", which="major", right=True, labelright=True
+                    )
 
-                y_offset_factor = 10 ** (i * y_offset_mul[0])
-                y_offset_summand = i * y_offset_add[0]
+                    kwargs_tick_curves_default = {"fontsize": "small"}
+                    kwargs_tick_curves_updated = update_kwargs(
+                        kwargs_tick_curves_default, kwargs_tick_curves, j
+                    )
 
-                ax_ticks.set_yticks(
-                    [points_i[y_col].iloc[-1] * y_offset_factor + y_offset_summand],
-                    [curve_labels_fmt[i]],
-                    **kwargs_tick_curves_updated,
-                )
+                    y_offset_factor = 10 ** (j * y_offset_mul_i)
+                    y_offset_summand = j * y_offset_add_i
+
+                    ax_ticks.set_yticks(
+                        [y_pos * y_offset_factor + y_offset_summand],
+                        [curve_labels_fmt[i][j]],
+                        **kwargs_tick_curves_updated,
+                    )
 
 
 def _format_curve_label(
     variables: str | list[str],
     values: float | Sequence[float],
-    variables_labels: str | list[str | None] | None = None,
-    units: str | list[str | None] | None = None,
+    variables_labels: str | list[str | None] | dict[str, str] | None = None,
+    variables_units: str | list[str | None] | dict[str, str] | None = None,
     index_group: int = 0,
     y_offset_add: float = 0,
     y_offset_mul: float = 0,
@@ -1229,35 +1267,32 @@ def _format_curve_label(
     if not isinstance(values, Sequence):
         values = [values]
 
-    if units is None:
-        units = cast(list[str | None], len(variables) * [None])
+    if variables_units is None:
+        variables_units = cast(list[str | None], len(variables) * [None])
+    elif isinstance(variables_units, dict):
+        variables_units = [variables_units[v] for v in variables]
 
-    if not isinstance(units, list):
-        units = [units]
+    if not isinstance(variables_units, list):
+        variables_units = [variables_units]
 
     if variables_labels is None:
         variables_labels = cast(list[str | None], len(variables) * [None])
 
-    if not isinstance(variables_labels, list):
+    if not isinstance(variables_labels, list) and not isinstance(
+        variables_labels, dict
+    ):
         variables_labels = [variables_labels]
 
     if len(values) != len(variables):
         raise ValueError("Please pass as many values as variables")
 
-    if len(units) != len(variables):
+    if len(variables_units) != len(variables):
         raise ValueError("Please pass as many units as variables")
 
-    if len(variables_labels) != len(variables):
+    if isinstance(variables_labels, list) and len(variables_labels) != len(variables):
         raise ValueError("Please pass as many labels as variables")
 
-    values_fmt: list[str] = []
-    for v, u in zip(values, units):
-        value_fmt = f"{v:.3g}"
-
-        if u is not None and u != "":
-            value_fmt += rf"\,\mathrm{{{u}}}"
-
-        values_fmt.append(value_fmt)
+    values_fmt = [f"{v:.3g}" for v in values]
 
     # format offsets
     offset_labels = []
@@ -1272,39 +1307,71 @@ def _format_curve_label(
 
     variables_fmt = []
 
-    for variable, value, label in zip(variables, values_fmt, variables_labels):
+    for i, (variable, value) in enumerate(zip(variables, values_fmt)):
         # find binned variables
         rp = variable.rpartition("_")
 
         if rp[2] == "max" and rp[0] + "_min" in variables:
             continue
 
+        is_binned = rp[2] == "min" and rp[0] + "_max" in variables
+
+        if is_binned:
+            variable = rp[0]
+
+        if isinstance(variables_labels, dict):
+            variable_label = variables_labels[variable]
+        else:
+            variable_label = variables_labels[i]
+
         variable_label = (
-            label if label is not None else nc_labels.kinvars_py_to_tex[variable]
+            variable_label
+            if variable_label is not None and variable_label != "fallback"
+            else nc_labels.kinvars_py_to_tex[variable]
         )
 
-        if rp[2] == "min" and rp[0] + "_max" in variables:
+        variable_unit = variables_units[i]
+        variable_unit_label = (
+            f"\\,{variable_unit}"
+            if variable_unit is not None and variable_unit != ""
+            else ""
+        )
+
+        if is_binned:
             i_max = variables.index(rp[0] + "_max")
 
-            variables_fmt.append(f"${value} < {variable_label} < {values_fmt[i_max]}$")
+            variables_fmt.append(
+                f"${value}{variable_unit_label} < {variable_label} < {values_fmt[i_max]}{variable_unit_label}$"
+            )
         else:
-            variables_fmt.append(f"${variable_label} = {value}$")
+            variables_fmt.append(f"${variable_label} = {value}{variable_unit_label}$")
 
     return ",  ".join(variables_fmt) + offset_label
 
 
+def _get_kinematic_variable(v: str | list[str]) -> str:
+    if isinstance(v, str):
+        return v
+    elif isinstance(v, list) and v[0].endswith("_min") and v[1].endswith("_max"):
+        return v[0][:-4]
+    else:
+        raise ValueError(f"Unrecognized kinematic variables {v}")
+
+
 def _set_labels(
     ax: plt.Axes | Sequence[plt.Axes],
+    x_variable: str | list[str],
     x_fallback: str,
     y_fallback: dict[DataVsTheoryType, str],
-    # y_ratio_fallback: str = r"$\dfrac{\rm Theory}{\rm Data}$",
-    x_label: Literal["fallback"] | str | None = "fallback",
+    x_label: Literal["fallback"] | str | dict[str, str] | None = "fallback",
+    x_unit: str | dict[str, str] = "",
     y_label: (
         Literal["fallback"]
         | str
         | None
         | SequenceNotStr[Literal["fallback"] | str | None]
     ) = "fallback",
+    y_unit: str | SequenceNotStr[str] = "",
     plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = [
         "absolute",
         "theory over data",
@@ -1318,23 +1385,55 @@ def _set_labels(
     if isinstance(ax, plt.Axes):
         ax = [ax]
 
+    if isinstance(plot_types, str):
+        plot_types = [plot_types]
+    else:
+        plot_types = list(plot_types)
+
     if x_label is not None:
         if x_label == "fallback":
+
+            x_fallback = _get_kinematic_variable(x_variable)
+
+            if x_fallback in nc_labels.kinvars_py_to_tex:
+                x_fallback = nc_labels.kinvars_py_to_tex[x_fallback]
+
             x_label = x_fallback
 
-        ax[-1].set_xlabel(x_label, **kwargs_xlabel)
+        elif isinstance(x_label, dict):
+            x_label = x_label[_get_kinematic_variable(x_variable)]
+
+        if isinstance(x_unit, dict):
+            x_unit = x_unit[_get_kinematic_variable(x_variable)]
+
+        if x_unit != "":
+            x_label += f"\\;\\left[{x_unit}\\right]"
+
+        if x_label != "":
+            ax[-1].set_xlabel(f"${x_label}$", **kwargs_xlabel)
 
     if y_label is not None:
         y_label = [y_label] if isinstance(y_label, str) else list(y_label)
+        y_unit = [y_unit] if isinstance(y_unit, str) else list(y_unit)
 
         y_label.extend(["fallback"] * max(len(ax) - len(y_label), 0))
+        y_unit.extend([""] * max(len(ax) - len(y_unit), 0))
 
-        for ax_i, plot_type_i, y_label_i in zip(ax, plot_types, y_label):
+        for ax_i, plot_type_i, y_label_i, y_unit_i in zip(
+            ax, plot_types, y_label, y_unit
+        ):
             if y_label_i is not None:
-                ax_i.set_ylabel(
-                    y_fallback[plot_type_i] if y_label_i == "fallback" else y_label_i,
-                    **kwargs_ylabel,
-                )
+                if y_label_i == "fallback":
+                    y_label_i = y_fallback[plot_type_i]
+
+                if y_unit_i != "":
+                    y_label_i += f"\\;\\left[{y_unit_i}\\right]"
+
+                if y_label_i != "":
+                    ax_i.set_ylabel(
+                        f"${y_label_i}$",
+                        **kwargs_ylabel,
+                    )
 
     if title is not None:
         kwargs_title_default = {"fontsize": "medium"}
@@ -1354,9 +1453,9 @@ def _add_chi2_legend(
         "parent": ax,
         "handles": [Patch(), Patch(), Patch()],
         "labels": [
-            f"$N_{{\\text{{points}}}} = {len(points)}$",
+            f"$N_{{\\text{{data}}}} = {len(points)}$",
             f"$\\chi^2_{{\\text{{total}}}} = {points['chi2'].sum():.3f}$",
-            f"$\\chi^2_{{\\text{{total}}}}\\,/\\, N_{{\\text{{points}}}} = {points['chi2'].sum() / len(points):.3f}$",
+            f"$\\chi^2_{{\\text{{total}}}}\\,/\\, N_{{\\text{{data}}}} = {points['chi2'].sum() / len(points):.3f}$",
         ],
         "labelspacing": 0,
         "handlelength": 0,

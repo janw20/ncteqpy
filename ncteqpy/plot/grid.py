@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from math import ceil
-from typing import Any, cast
+from typing_extensions import Any, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,6 +16,17 @@ from ncteqpy.plot.util import AdditionalLegend
 from ncteqpy.util import update_kwargs
 
 SubplotPos = Literal["upper right", "upper left", "lower left", "lower right"] | int
+
+
+def _reshape_units(
+    a: npt.NDArray, unit_shape: tuple[int, int], n_unit_cols: int, n_unit_real: int
+) -> npt.NDArray:
+    # fmt: off
+    return np.array([a[
+            (i // n_unit_cols * unit_shape[0]):((i // n_unit_cols + 1) * unit_shape[0]),
+            (i % n_unit_cols * unit_shape[1]):((i % n_unit_cols + 1) * unit_shape[1])
+        ] for i in range(n_unit_real)])
+    # fmt: on
 
 
 class AxesGrid:
@@ -174,12 +185,9 @@ class AxesGrid:
         self._fig = fig
         self._ax = np.array(ax, copy=True).reshape((n_rows, n_cols))
 
-        # fmt: off
-        self._ax_unit_real = np.array([self._ax[
-            (i // n_unit_cols * unit_shape[0]):((i // n_unit_cols + 1) * unit_shape[0]),
-            (i % n_unit_cols * unit_shape[1]):((i % n_unit_cols + 1) * unit_shape[1])
-        ] for i in range(n_unit_real)])
-        # fmt: on
+        self._ax_unit_real = _reshape_units(
+            self._ax, unit_shape, n_unit_cols, n_unit_real
+        )
 
         if isinstance(ax, np.ndarray):
             # remove the superfluous axes in the lower left corner
