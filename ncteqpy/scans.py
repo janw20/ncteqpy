@@ -1,15 +1,18 @@
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Sequence, cast, override
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from typing_extensions import Any, Hashable, Sequence, cast, overload, override
 
+from ncteqpy._typing import SequenceNotStr
 import ncteqpy.jaml as jaml
-from ncteqpy.data import Datasets
+from ncteqpy.data_groupby import DatasetsGroupBy
+from ncteqpy.plot.grid import AxesGrid
 from ncteqpy.plot.scan import plot_scan_1d, plot_scan_2d
+from ncteqpy.util import update_kwargs
 
 
 def _all_equal(s: Sequence[Any]) -> bool:
@@ -472,79 +475,214 @@ class ParameterScan1D(ParameterScan):
 
         return self._profile_chi2_per_data
 
+    @overload
     def plot(
         self,
+        parameter: str | Sequence[str] | None = ...,
+        profile_groupby: DatasetsGroupBy | None = ...,
+        highlight_groups: Hashable | SequenceNotStr[Hashable] | None = ...,
+        highlight_important_groups: int | None = ...,
+        legend: bool = True,
+        kwargs_subplots: dict[str, Any] | None = ...,
+        kwargs_chi2_profile_total: dict[str, Any] = {},
+        kwargs_chi2_profiles: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_chi2_profiles_not_highlighted: (
+            dict[str, Any] | list[dict[str, Any] | None]
+        ) = {},
+        kwargs_chi2_minimum: dict[str, Any] = {},
+        kwargs_legend: dict[str, Any] = {},
+        *,
         ax: plt.Axes | Sequence[plt.Axes],
+    ) -> AxesGrid:
+        """Plot 1D parameter scan(s).
+
+        Parameters
+        ----------
+        parameter : str | Sequence[str] | None, optional
+            The parameter(s) whose scan(s) to plot, by default None, meaning all scanned parameters.
+        profile_groupby : DatasetsGroupBy | None, optional
+            How to group the profiles, by default None, meaning no grouping. Profiles of data sets in the same group are summed.
+        highlight_groups : Hashable | SequenceNotStr[Hashable] | None, optional
+            Keys of the groups that are highlighted, by default None, meaning all groups are highlighted. Groups not highlighted are, by default, grayed out.
+        highlight_important_groups : int | None, optional
+            How many groups with the largest Δχ² to highlight, by default None, meaning all groups are highlighted. The "importance" of a group is determined by the maximum of the absolute Δχ² of the profile.
+        legend : bool, optional
+            If a legend of the group labels is shown, by default True.
+        kwargs_subplots : dict[str, Any], optional
+            Keyword arguments to pass to `AxesGrid` in case `ax` is None.
+        kwargs_chi2_profile_total : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.plot` for the profile of the total Δχ².
+        kwargs_chi2_profiles : dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments to pass to `plt.Axes.plot` for the grouped Δχ² profiles. In case `highlight_groups` or `highlight_important_groups` is passed, these are the highlighted profiles.
+        kwargs_chi2_profiles_not_highlighted : dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments to pass to `plt.Axes.plot` for the grouped, non-highlighted Δχ² profiles.
+        kwargs_chi2_minimum : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.plot` for the parameter minimum point shown at Δχ² = 0.
+        kwargs_legend : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.legend` for the legend of the group labels.
+        ax : plt.Axes | Sequence[plt.Axes] | None, optional
+            The axes to plot on, by default None, meaning an `AxesGrid` is created and returned.
+
+        Returns
+        -------
+        AxesGrid
+            The `AxesGrid` that is created when `ax` is None.
+        """
+
+    @overload
+    def plot(
+        self,
+        parameter: str | Sequence[str] | None = ...,
+        profile_groupby: DatasetsGroupBy | None = ...,
+        highlight_groups: Hashable | SequenceNotStr[Hashable] | None = ...,
+        highlight_important_groups: int | None = ...,
+        legend: bool = True,
+        kwargs_subplots: dict[str, Any] | None = ...,
+        kwargs_chi2_profile_total: dict[str, Any] = {},
+        kwargs_chi2_profiles: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_chi2_profiles_not_highlighted: (
+            dict[str, Any] | list[dict[str, Any] | None]
+        ) = {},
+        kwargs_chi2_minimum: dict[str, Any] = {},
+        kwargs_legend: dict[str, Any] = {},
+        *,
+        ax: None = ...,
+    ) -> None:
+        """Plot 1D parameter scan(s).
+
+        Parameters
+        ----------
+        parameter : str | Sequence[str] | None, optional
+            The parameter(s) whose scan(s) to plot, by default None, meaning all scanned parameters.
+        profile_groupby : DatasetsGroupBy | None, optional
+            How to group the profiles, by default None, meaning no grouping. Profiles of data sets in the same group are summed.
+        highlight_groups : Hashable | SequenceNotStr[Hashable] | None, optional
+            Keys of the groups that are highlighted, by default None, meaning all groups are highlighted. Groups not highlighted are, by default, grayed out.
+        highlight_important_groups : int | None, optional
+            How many groups with the largest Δχ² to highlight, by default None, meaning all groups are highlighted. The "importance" of a group is determined by the maximum of the absolute Δχ² of the profile.
+        legend : bool, optional
+            If a legend of the group labels is shown, by default True.
+        kwargs_subplots : dict[str, Any], optional
+            Keyword arguments to pass to `AxesGrid` in case `ax` is None.
+        kwargs_chi2_profile_total : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.plot` for the profile of the total Δχ².
+        kwargs_chi2_profiles : dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments to pass to `plt.Axes.plot` for the grouped Δχ² profiles. In case `highlight_groups` or `highlight_important_groups` is passed, these are the highlighted profiles.
+        kwargs_chi2_profiles_not_highlighted : dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments to pass to `plt.Axes.plot` for the grouped, non-highlighted Δχ² profiles.
+        kwargs_chi2_minimum : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.plot` for the parameter minimum point shown at Δχ² = 0.
+        kwargs_legend : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.legend` for the legend of the group labels.
+        ax : plt.Axes | Sequence[plt.Axes] | None, optional
+            The axes to plot on, by default None, meaning an `AxesGrid` is created and returned.
+        """
+        ...
+
+    def plot(
+        self,
         parameter: str | Sequence[str] | None = None,
-        datasets: Datasets | None = None,
-        data_groupby: str | None = None,
-        groups_labels: dict[str, str] | None = None,
-        highlight_groups: str | list[str] | None = None,
+        profile_groupby: DatasetsGroupBy | None = None,
+        highlight_groups: Hashable | SequenceNotStr[Hashable] | None = None,
         highlight_important_groups: int | None = None,
         legend: bool = True,
-        kwargs_chi2_total: dict[str, Any] | None = None,
-        kwargs_chi2_minimum: dict[str, Any] | None = None,
-        kwargs_chi2_groups: dict[str, Any] | list[dict[str, Any] | None] | None = None,
-        **kwargs: Any,
-    ) -> None:
+        kwargs_subplots: dict[str, Any] | None = None,
+        kwargs_chi2_profile_total: dict[str, Any] = {},
+        kwargs_chi2_profiles: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_chi2_profiles_not_highlighted: (
+            dict[str, Any] | list[dict[str, Any] | None]
+        ) = {},
+        kwargs_chi2_minimum: dict[str, Any] = {},
+        kwargs_legend: dict[str, Any] = {},
+        *,
+        ax: plt.Axes | Sequence[plt.Axes] | None = None,
+    ) -> AxesGrid | None:
+        """Plot 1D parameter scan(s).
 
-        if data_groupby is not None:
-            if self.profile_chi2_per_data is None:
-                raise ValueError(
-                    "Grouping data not available since no per-data breakdown was loaded"
-                )
+        Parameters
+        ----------
+        parameter : str | Sequence[str] | None, optional
+            The parameter(s) whose scan(s) to plot, by default None, meaning all scanned parameters.
+        profile_groupby : DatasetsGroupBy | None, optional
+            How to group the profiles, by default None, meaning no grouping. Profiles of data sets in the same group are summed.
+        highlight_groups : Hashable | SequenceNotStr[Hashable] | None, optional
+            Keys of the groups that are highlighted, by default None, meaning all groups are highlighted. Groups not highlighted are, by default, grayed out.
+        highlight_important_groups : int | None, optional
+            How many groups with the largest Δχ² to highlight, by default None, meaning all groups are highlighted. The "importance" of a group is determined by the maximum of the absolute Δχ² of the profile.
+        legend : bool, optional
+            If a legend of the group labels is shown, by default True.
+        kwargs_subplots : dict[str, Any], optional
+            Keyword arguments to pass to `AxesGrid` in case `ax` is None.
+        kwargs_chi2_profile_total : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.plot` for the profile of the total Δχ².
+        kwargs_chi2_profiles : dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments to pass to `plt.Axes.plot` for the grouped Δχ² profiles. In case `highlight_groups` or `highlight_important_groups` is passed, these are the highlighted profiles.
+        kwargs_chi2_profiles_not_highlighted : dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments to pass to `plt.Axes.plot` for the grouped, non-highlighted Δχ² profiles.
+        kwargs_chi2_minimum : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.plot` for the parameter minimum point shown at Δχ² = 0.
+        kwargs_legend : dict[str, Any], optional
+            Keyword arguments to pass to `plt.Axes.legend` for the legend of the group labels.
+        ax : plt.Axes | Sequence[plt.Axes] | None, optional
+            The axes to plot on, by default None, meaning an `AxesGrid` is created and returned.
 
-            if datasets is None:
-                raise ValueError("Grouping data requires passing `datasets`")
+        Returns
+        -------
+        AxesGrid | None
+            The `AxesGrid` that is created when `ax` is None, otherwise None.
+        """
 
-            # construct dataset grouper as pd.Series with index "id_dataset" and values `data_groupby`
-            # TODO: Better treatment of datasets with the same ID but different values for `data_groupby`
-            grouper = (
-                datasets.index[["id_dataset", data_groupby]]
-                .drop_duplicates()
-                .set_index("id_dataset")[data_groupby]
-            )
+        if isinstance(ax, plt.Axes):
+            ax = [ax]
 
-            # group profile_chi2_per_data by the grouper and sum the chi2 values of the groups
-            profile_chi2_groups = (
-                self.profile_chi2_per_data.T.groupby(lambda x: (x[0], grouper[x[1]]))
-                .sum()
-                .T
-            )
-            profile_chi2_groups.columns = pd.MultiIndex.from_tuples(
-                profile_chi2_groups.columns, names=["parameters", data_groupby]
-            )
+        if parameter is None:
+            parameter = self.profile_params.columns.to_list()
+        elif isinstance(parameter, str):
+            parameter = [parameter]
 
-            data_groups_labels = dict(
-                zip(datasets.index[data_groupby], datasets.index[data_groupby].map(str))
-            )
+        kwargs_subplots_default = {
+            "sharey": True,
+            "layout": "constrained",
+        }
+        kwargs_subplots_updated = update_kwargs(
+            kwargs_subplots_default, kwargs_subplots
+        )
 
+        if ax is None:
+            ax_grid = AxesGrid(n_real=len(parameter), **kwargs_subplots_updated)
+            ax_parameters = ax_grid.ax_real
         else:
-            profile_chi2_groups = None
-            data_groups_labels = None
+            if len(ax) != len(parameter):
+                raise ValueError(f"len(ax) must be {len(parameter)}")
+
+            ax_grid = None
+            ax_parameters = np.asarray(ax)
 
         minimum = self.minimum_params.copy()
         minimum["chi2"] = self.minimum_chi2
 
-        if data_groups_labels is not None and groups_labels is not None:
-            data_groups_labels = data_groups_labels | groups_labels
-
         plot_scan_1d(
-            ax=ax,
+            ax=ax_parameters,  # pyright: ignore[reportArgumentType]
             profile_params=self.profile_params,
-            profile_chi2=self.profile_chi2,
+            profile_chi2_total=self.profile_chi2,
+            profile_chi2_per_data=self.profile_chi2_per_data,
             parameter=parameter,
+            profile_groupby=profile_groupby,
             minimum=minimum,
-            profile_chi2_groups=profile_chi2_groups,
-            groups_labels=data_groups_labels,
             legend=legend,
             highlight_groups=highlight_groups,
             highlight_important_groups=highlight_important_groups,
-            kwargs_chi2_total=kwargs_chi2_total,
+            kwargs_chi2_profile_total=kwargs_chi2_profile_total,
             kwargs_chi2_minimum=kwargs_chi2_minimum,
-            kwargs_chi2_groups=kwargs_chi2_groups,
-            **kwargs,
+            kwargs_chi2_profiles=kwargs_chi2_profiles,
+            kwargs_legend=kwargs_legend,
+            kwargs_chi2_profiles_not_highlighted=kwargs_chi2_profiles_not_highlighted,
         )
+
+        if ax_grid is not None:
+            ax_grid.prune_labels()
+
+        return ax_grid
 
 
 class ParameterScan2D(ParameterScan):
@@ -833,11 +971,13 @@ class ParameterScan2D(ParameterScan):
         self,
         ax: plt.Axes | Sequence[plt.Axes],
         parameters: tuple[str, str] | list[tuple[str, str]] | None = None,
-        **kwargs: Any,
+        minimum: pd.DataFrame | None = None,
+        **kwargs,
     ) -> None:
 
-        minimum = self.minimum_params.copy()
-        minimum["chi2"] = self.minimum_chi2
+        if minimum is None:
+            minimum = self.minimum_params.copy()
+            minimum["chi2"] = self.minimum_chi2
 
         plot_scan_2d(
             ax=ax,

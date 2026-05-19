@@ -1,43 +1,85 @@
 from __future__ import annotations
 
-from math import sqrt
-from typing import Any, Sequence
-
-import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from typing_extensions import Any, Hashable, Sequence
 
+from ncteqpy._typing import SequenceNotStr
+from ncteqpy.data_groupby import DatasetsGroupBy
 from ncteqpy.labels import parameters_cj15_py_to_tex
 from ncteqpy.util import update_kwargs
 
 
 def plot_scan_1d(
     ax: plt.Axes | Sequence[plt.Axes],
+    minimum: pd.DataFrame,  # TODO: should be pd.Series
     profile_params: pd.DataFrame,
-    minimum: pd.DataFrame,
-    profile_chi2: pd.DataFrame | None = None,
+    profile_chi2_total: pd.DataFrame | None = None,
+    profile_chi2_per_data: pd.DataFrame | None = None,
     parameter: str | Sequence[str] | None = None,
-    profile_chi2_groups: pd.DataFrame | None = None,
-    groups_labels: dict[str, str] | None = None,
-    dof: int | None = None,
-    legend: bool = True,
-    highlight_groups: str | list[str] | None = None,
+    profile_groupby: DatasetsGroupBy | None = None,
+    highlight_groups: Hashable | SequenceNotStr[Hashable] | None = None,
     highlight_important_groups: int | None = None,
-    kwargs_chi2_total: dict[str, Any] | None = None,
+    legend: bool = True,
+    kwargs_chi2_profile_total: dict[str, Any] | None = None,
     kwargs_chi2_minimum: dict[str, Any] | None = None,
-    kwargs_chi2_groups: dict[str, Any] | list[dict[str, Any] | None] | None = None,
+    kwargs_chi2_profiles: dict[str, Any] | list[dict[str, Any] | None] | None = None,
+    kwargs_chi2_profiles_not_highlighted: (
+        dict[str, Any] | list[dict[str, Any] | None] | None
+    ) = None,
+    kwargs_legend: dict[str, Any] | None = None,
 ) -> None:
+    """Plot 1D parameter scan(s).
+
+    Parameters
+    ----------
+    ax : plt.Axes | Sequence[plt.Axes]
+        The axes to plot on, needs to be the same length as `parameter`.
+    minimum : pd.DataFrame
+        The minimum of the χ² function with a column for each parameter and one "chi2" column, which each have one row for the parameter and χ² values in the minimum.
+    profile_params: pd.DataFrame
+        The values of the profiled parameters with the parameter names as columns and the profiled points as rows.
+    profile_chi2_total : pd.DataFrame
+        The profile of the total χ² function with a column for each parameter and the profiled points as rows.
+    profile_chi2_total : pd.DataFrame
+        The profile of the χ² function of each data set with the parameter names and data set IDs as columns and the profiled points as rows.
+    parameter : str | Sequence[str] | None, optional
+        The parameter(s) whose scan(s) to plot, by default None, meaning all scanned parameters.
+    profile_groupby : DatasetsGroupBy | None, optional
+        How to group the profiles, by default None, meaning no grouping. Profiles of data sets in the same group are summed.
+    highlight_groups : Hashable | SequenceNotStr[Hashable] | None, optional
+        Keys of the groups that are highlighted, by default None, meaning all groups are highlighted. By default, groups not highlighted are grayed out.
+    highlight_important_groups : int | None, optional
+        How many groups with the largest Δχ² to highlight, by default None, meaning all groups are highlighted. The "importance" of a group is determined by the maximum of the absolute Δχ² of the profile.
+    legend : bool, optional
+        If a legend of the group labels is shown, by default True.
+    kwargs_chi2_profile_total : dict[str, Any], optional
+        Keyword arguments to pass to `plt.Axes.plot` for the profile of the total Δχ².
+    kwargs_chi2_profiles : dict[str, Any] | list[dict[str, Any] | None], optional
+        Keyword arguments to pass to `plt.Axes.plot` for the grouped Δχ² profiles. In case `highlight_groups` or `highlight_important_groups` is passed, these are the highlighted profiles.
+    kwargs_chi2_profiles_not_highlighted : dict[str, Any] | list[dict[str, Any] | None], optional
+        Keyword arguments to pass to `plt.Axes.plot` for the grouped, non-highlighted Δχ² profiles.
+    kwargs_chi2_minimum : dict[str, Any], optional
+        Keyword arguments to pass to `plt.Axes.plot` for the parameter minimum point shown at Δχ² = 0.
+    kwargs_legend : dict[str, Any], optional
+        Keyword arguments to pass to `plt.Axes.legend` for the legend of the group labels.
+
+    Returns
+    -------
+    AxesGrid
+        The `AxesGrid` that is created when `ax` is None.
+    """
 
     if isinstance(ax, plt.Axes):
         ax = [ax]
 
     if parameter is None:
-        parameter = list(profile_params.columns)
+        parameter = profile_params.columns.to_list()
     elif isinstance(parameter, str):
         parameter = [parameter]
 
-    if profile_chi2 is None and profile_chi2_groups is None:
+    if profile_chi2_total is None and profile_chi2_per_data is None:
         raise ValueError(
             "Either `profile_chi2` or `profile_chi2_groups` must be provided."
         )
@@ -47,46 +89,82 @@ def plot_scan_1d(
             "The number of axes must be equal to the number of parameters."
         )
 
-    for i, p in enumerate(parameter):
+    if len(ax) != len(parameter):
+        raise ValueError(
+            "The number of axes must be equal to the number of parameters."
+        )
 
-        if profile_chi2 is not None:
+    if profile_chi2_per_data is not None:
+        if profile_groupby is not None:
+            profile_chi2_grouped = (
+                profile_chi2_per_data.T.sort_index(
+                    level=1,
+                    key=(
+                        profile_groupby.sort_key
+                        if profile_groupby is not None
+                        else None
+                    ),  # pyright: ignore [reportArgumentType]
+                )
+                .groupby(
+                    lambda x: (x[0], profile_groupby.grouper[x[1]]),
+                    sort=False,
+                    dropna=False,
+                )
+                .sum()
+                .copy()
+            )
 
-            kwargs_default = {
+            profile_chi2_grouped.index = pd.MultiIndex.from_tuples(
+                profile_chi2_grouped.index,
+                names=["parameter", profile_groupby.grouper.name],
+            )
+
+            profile_chi2_grouped = profile_chi2_grouped.T
+        else:
+            profile_chi2_grouped = profile_chi2_per_data.copy()
+    else:
+        profile_chi2_grouped = None
+
+    for p_i, ax_i in zip(parameter, ax):
+        if profile_chi2_total is not None:
+
+            kwargs_chi2_total_default = {
                 "color": "black",
                 "label": "Total",
                 "marker": ".",
                 "zorder": 4,
             }
-            kwargs = update_kwargs(kwargs_default, kwargs_chi2_total)
-
-            ax[i].plot(
-                profile_params[p],
-                profile_chi2[p] - minimum["chi2"].iloc[0],
-                **kwargs,
+            kwargs_chi2_total_updated = update_kwargs(
+                kwargs_chi2_total_default, kwargs_chi2_profile_total
             )
 
-        kwargs_default = {"marker": "*", "color": "black", "zorder": 4}
-        kwargs = update_kwargs(kwargs_default, kwargs_chi2_minimum)
+            ax_i.plot(
+                profile_params[p_i],
+                profile_chi2_total[p_i] - minimum["chi2"].iloc[0],
+                **kwargs_chi2_total_updated,
+            )
 
-        ax[i].plot(minimum[p], 0, **kwargs)
+        kwargs_chi2_minimum_default = {"marker": "*", "color": "black", "zorder": 4}
+        kwargs_chi2_minimum_updated = update_kwargs(
+            kwargs_chi2_minimum_default, kwargs_chi2_minimum
+        )
 
-        if profile_chi2_groups is not None:
+        ax_i.plot(minimum[p_i], 0, **kwargs_chi2_minimum_updated)
 
+        if profile_chi2_grouped is not None:
             # group -> chi2 value at the minimum parameter
             chi2_min = pd.Series(
                 [
-                    np.interp(minimum[p], profile_params[p], profile_chi2_groups[p, g])[
-                        0
-                    ]
-                    for g in profile_chi2_groups[p]
+                    np.interp(minimum[p_i], profile_params[p_i], profile_chi2_grouped[p_i, g])[0]  # pyright: ignore[reportIndexIssue]  # fmt: skip
+                    for g in profile_chi2_grouped[p_i]
                 ],
-                index=profile_chi2_groups[p].columns,
+                index=profile_chi2_grouped[p_i].columns,
             )
 
             important: pd.Index = (
                 (
-                    (profile_chi2_groups[p] - chi2_min)
-                    .iloc[[0, -1]]
+                    (profile_chi2_grouped[p_i] - chi2_min)
+                    .abs()
                     .max(axis=0)
                     .sort_values(ascending=False)
                     .iloc[:highlight_important_groups]
@@ -98,151 +176,76 @@ def plot_scan_1d(
 
             if isinstance(highlight_groups, str):
                 highlight_groups = [highlight_groups]
-            elif highlight_groups is None:
-                highlight_groups = []
 
-            for j, g in enumerate(profile_chi2_groups[p]):
+            for j, g in enumerate(profile_chi2_grouped[p_i]):
                 if (
                     highlight_groups is not None
                     or highlight_important_groups is not None
                 ):
-                    if g in highlight_groups or g in important:
-                        label = (
-                            groups_labels.get(g, g) if groups_labels is not None else g
-                        )
-                        color = None
+                    if (
+                        highlight_groups is not None
+                        and g in highlight_groups
+                        or g in important
+                    ):
+                        if profile_groupby is not None:
+                            label = profile_groupby.labels[g]
+                            props = (
+                                profile_groupby.get_props(
+                                    by=profile_groupby.keys, of=[g]
+                                )
+                                .iloc[0]
+                                .to_dict()
+                            )
+                        else:
+                            label = g
+                            props = {}
+
                         zorder = 3
                     else:
                         label = None
-                        color = "gray"
+                        kwargs_chi2_profiles_not_highlighted_default = {"color": "gray"}
+                        props = update_kwargs(
+                            kwargs_chi2_profiles_not_highlighted_default,
+                            kwargs_chi2_profiles_not_highlighted,
+                        )
                         zorder = None
                 else:
-                    label = groups_labels.get(g, g) if groups_labels is not None else g
-                    color = None
+                    if profile_groupby is not None:
+                        label = profile_groupby.labels[g]
+                        props = (
+                            profile_groupby.get_props(by=profile_groupby.keys, of=[g])
+                            .iloc[0]
+                            .to_dict()
+                        )
+                    else:
+                        label = g
+                        props = {}
+
                     zorder = None
 
-                kwargs_default = {
+                kwargs_chi2_profiles_default = {
                     "marker": ".",
                     "label": label,
-                    "color": color,
                     "zorder": zorder,
-                }
-                kwargs = update_kwargs(kwargs_default, kwargs_chi2_groups, j)
+                } | props
+                kwargs_chi2_profiles_updated = update_kwargs(
+                    kwargs_chi2_profiles_default, kwargs_chi2_profiles, j
+                )
 
-                ax[i].plot(
-                    profile_params[p], profile_chi2_groups[p, g] - chi2_min[g], **kwargs
-                )  # TODO: option to display data IDs?
+                ax_i.plot(
+                    profile_params[p_i],
+                    profile_chi2_grouped[p_i, g] - chi2_min[g],
+                    **kwargs_chi2_profiles_updated,
+                )
 
-        if dof is not None:
-            ax2 = ax[i].secondary_yaxis(
-                "right", functions=(lambda x: x / dof, lambda x: x * dof)
-            )
-            ax2.set_ylabel(r"$\Delta \chi^2 \: / \: N_\text{d.o.f.}$")
-
-        ax[i].set_xlim(profile_params[p].min(), profile_params[p].max())
-
-        ax[i].set(xlabel=f"${parameters_cj15_py_to_tex[p]}$", ylabel=r"$\Delta \chi^2$")
-        ax[i].grid()
-
-        if legend:
-            ax[i].legend()
-
-
-def plot_scan_2d(
-    ax: plt.Axes | Sequence[plt.Axes],
-    profile_params: pd.DataFrame,
-    minimum: pd.DataFrame,
-    profile_chi2: pd.DataFrame,
-    parameters: tuple[str, str] | list[tuple[str, str]] | None = None,
-    tolerance: float | None = None,
-    **kwargs: Any,
-) -> None:
-
-    if parameters is None:
-        parameters = list(
-            zip(
-                profile_params.columns.get_level_values(0),
-                profile_params.columns.get_level_values(1),
-            )
-        )
-    elif isinstance(parameters, tuple):
-        parameters = [parameters]
-
-    if isinstance(ax, plt.Axes):
-        ax = [ax]
-    elif len(ax) != len(parameters):
-        raise ValueError(
-            "The number of axes must be equal to the number of parameter pairs."
-        )
-
-    if len(profile_params) != len(profile_chi2):
-        raise ValueError(
-            "The number of parameter points must be equal to the number of chi2 values."
-        )
-
-    n = int(sqrt(len(profile_params)))
-    if n**2 != len(profile_params):
-        raise ValueError("Only scans on square grids are supported.")
-
-    for p, ax_i in zip(parameters, ax):
-
-        ax_i.set_adjustable("box")
-        ax_i.set_box_aspect(1)
-
-        norm = mcolors.TwoSlopeNorm(tolerance) if tolerance is not None else None
-
-        image = ax_i.imshow(
-            np.reshape(profile_chi2[p] - minimum["chi2"].iloc[0], (n, n)),
-            extent=(
-                profile_params[*p, 0].min(),
-                profile_params[*p, 0].max(),
-                profile_params[*p, 1].min(),
-                profile_params[*p, 1].max(),
-            ),
-            cmap="Spectral_r",
-            norm=norm,  # pyright: ignore[reportArgumentType]
-            interpolation="bicubic",
-            origin="lower",
-            aspect="auto",
-            **kwargs,
-        )
-
-        cb = ax_i.figure.colorbar(
-            image,
-            ax=ax_i,
-        )
-        cb.set_label(r"$\Delta \chi^2$")
-        cb.ax.set_yscale("linear")
-
-        if tolerance is not None:
-            c = ax_i.contour(
-                np.reshape(profile_params[*p, 0], (n, n)),
-                np.reshape(profile_params[*p, 1], (n, n)),
-                np.reshape(profile_chi2[p] - minimum["chi2"].iloc[0], (n, n)),
-                levels=[tolerance / 2, tolerance, 2 * tolerance],
-                colors="black",
-            )
-            ax_i.clabel(c, c.levels)  # pyright: ignore[reportAttributeAccessIssue]
-
-        ax_i.plot(minimum[p[0]], minimum[p[1]], "*", color="black")
+        ax_i.set_xlim(profile_params[p_i].min(), profile_params[p_i].max())
 
         ax_i.set(
-            xlabel=f"${parameters_cj15_py_to_tex[p[0]]}$",
-            ylabel=f"${parameters_cj15_py_to_tex[p[1]]}$",
+            xlabel=f"${parameters_cj15_py_to_tex[p_i]}$", ylabel=r"$\Delta \chi^2$"
         )
-
-        # fix for overlapping ticks
-        ax_i.ticklabel_format(
-            axis="both",
-            style="sci",
-            scilimits=(
-                -2,
-                ax_i.xaxis.major.formatter._powerlimits[  # pyright: ignore[reportAttributeAccessIssue]
-                    1
-                ],
-            ),
-        )
-        # alternative fix for overlapping ticks
-        # ax.xaxis.set_tick_params(rotation=20)
-
         ax_i.grid()
+
+        if legend:
+            kwargs_legend_default = {}
+            kwargs_legend_updated = update_kwargs(kwargs_legend_default, kwargs_legend)
+            ax_i.legend(**kwargs_legend_updated)
