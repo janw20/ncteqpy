@@ -10,7 +10,15 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.patches import Patch
-from typing_extensions import Any, Iterator, Literal, Sequence, cast, overload
+from typing_extensions import (
+    Any,
+    Iterator,
+    Literal,
+    Sequence,
+    TypedDict,
+    cast,
+    overload,
+)
 
 import ncteqpy.data as data
 import ncteqpy.jaml as jaml
@@ -51,12 +59,13 @@ class Chi2(jaml.YAMLWrapper):
     _last_value: float | None = None
     _last_value_with_penalty: float | None = None
     _last_value_per_data: pd.Series[float] | None = None
-    _normalizations: pd.DataFrame | None = None
+    _last_normalizations: pd.DataFrame | None = None
     _snapshots_parameters: pd.DataFrame | None = None
     _snapshots_values: npt.NDArray[np.float64] | None = None
     _snapshots_breakdown_points: pd.DataFrame | None = None
     _snapshots_breakdown_datasets: pd.DataFrame | None = None
     _snapshots_breakdown_nuisance: pd.DataFrame | None = None
+    _snapshots_breakdown_normalizations: pd.DataFrame | None = None
     _num_points: pd.Series[int] | None = None
 
     _minimum_snapshot_index: int | None = None
@@ -65,6 +74,7 @@ class Chi2(jaml.YAMLWrapper):
     _minimum_value_per_data: pd.Series[float] | None = None
     # fmt: off
     _minimum_nuisance_parameters: pd.Series[npt.NDArray[np.float64]] | None = None  # pyright: ignore[reportInvalidTypeArguments]
+    _minimum_normalizations: pd.DataFrame | None = None
     # fmt: on
     _minimum_points: pd.DataFrame | None = None
     _minimum_S_E: pd.Series[float] | None = None
@@ -94,12 +104,17 @@ class Chi2(jaml.YAMLWrapper):
         self._snapshots_breakdown_nuisance = cast(
             pd.DataFrame | None, self._unpickle("chi2_snapshots_breakdown_nuisance")
         )
+        self._snapshots_breakdown_normalizations = cast(
+            pd.DataFrame | None,
+            self._unpickle("chi2_snapshots_breakdown_normalizations"),
+        )
 
         if (
             self._snapshots_parameters is None
             or self._snapshots_values is None
             or self._snapshots_breakdown_datasets is None
             or self._snapshots_breakdown_nuisance is None
+            or self._snapshots_breakdown_normalizations is None
         ):
             pattern = jaml.Pattern(
                 {
@@ -110,6 +125,7 @@ class Chi2(jaml.YAMLWrapper):
                                 "chi2Value": None,
                                 "perDataBreakdown": None,
                                 "nuisanceCorrBreakdown": None,
+                                "penaltyBreakdown": None,
                             }
                         ]
                     }
@@ -149,6 +165,20 @@ class Chi2(jaml.YAMLWrapper):
                 )
                 self._snapshots_breakdown_nuisance.columns.name = "id_dataset"
                 self._snapshots_breakdown_nuisance.index.name = "id_snapshot"
+
+            if (
+                "penaltyBreakdown" in snapshots[0]
+                and snapshots[0]["penaltyBreakdown"] is not None
+            ):
+                self._snapshots_breakdown_normalizations = pd.concat(
+                    [
+                        self._get_normalizations_dataframe(s["penaltyBreakdown"])
+                        for s in snapshots
+                    ],
+                    axis=0,
+                    keys=range(len(snapshots)),
+                    names=["id_snapshot"],
+                )
 
             self._pickle(self._snapshots_parameters, "chi2_snapshots_parameters")
             self._pickle(self._snapshots_values, "chi2_snapshots_values")
@@ -218,14 +248,14 @@ class Chi2(jaml.YAMLWrapper):
 
             # multiply the theory for which normalization is fitted with its corresponding factor
             mask = self._snapshots_breakdown_points["id_dataset"].isin(
-                self.normalizations.index
+                self.last_normalizations.index
             )
             # `theory_with_normalization_only` is NaN for data sets that are not normalization-corrected
             self._snapshots_breakdown_points.loc[
                 mask, "theory_with_normalization_only"
             ] = (
                 self._snapshots_breakdown_points.loc[mask, "theory"]
-                * self.normalizations.loc[
+                * self.last_normalizations.loc[
                     self._snapshots_breakdown_points.loc[mask, "id_dataset"]
                 ]["factor"].to_numpy()
             )
@@ -407,48 +437,67 @@ class Chi2(jaml.YAMLWrapper):
 
         return self._last_value_per_data
 
+    def _get_normalizations_dataframe(self, yaml: jaml.YAMLType) -> pd.DataFrame:
+        if not isinstance(yaml, list):
+            raise ValueError("yaml must be of type list")
+
+        class NormInfoEntry(TypedDict):
+            IDs: list[int]
+            Scheme: int
+            Value: float
+            Penalty: float
+
+        norm_records = []
+
+        for norm_info in cast(list[NormInfoEntry], yaml):
+            for id_dataset in norm_info["IDs"]:
+                norm_records.append(
+                    {
+                        "id_dataset": id_dataset,
+                        "id_dataset_group": norm_info["IDs"],
+                        "scheme": norm_info["Scheme"],
+                        "factor": norm_info["Value"],
+                        # the total penalty for the whole group
+                        "penalty_group_total": norm_info["Penalty"],
+                    }
+                )
+
+        normalizations = pd.DataFrame.from_records(norm_records, index="id_dataset")
+
+        # It is ambiguous how to distribute the penalty between the datasets. Thus, we first implement the variant in which the penalty of each data set is the total penalty of the group divided by the number of data sets in the group, ...
+        normalizations["penalty_dataset_even"] = normalizations[
+            "penalty_group_total"
+        ] / normalizations["id_dataset_group"].apply(len)
+
+        # ... and second, the variant in which the total penalty of the group is distributed between each data set proportionally to its χ² without penalty.
+        chi2_by_group = normalizations["id_dataset_group"].apply(
+            lambda group: self.minimum_value_per_data[group].sum()
+        )
+
+        normalizations.loc[chi2_by_group.index, "penalty_dataset_proportional"] = (
+            self.minimum_value_per_data.loc[chi2_by_group.index]
+            / chi2_by_group
+            * normalizations.loc[chi2_by_group.index, "penalty_group_total"]
+        )
+
+        # for data sets that did not survive the cuts, penalty_dataset_proportional was set to nan in the previous statement, so we set it to 0
+        normalizations.loc[
+            chi2_by_group[chi2_by_group == 0].index, "penalty_dataset_proportional"
+        ] = 0
+
+        return normalizations
+
     @property
-    def normalizations(self) -> pd.DataFrame:
-        if self._normalizations is None or self._yaml_changed():
+    def last_normalizations(self) -> pd.DataFrame:
+        if self._last_normalizations is None or self._yaml_changed():
             pattern = jaml.Pattern({"Chi2Fcn": {"NormInfo": None}})
-            yaml = cast(
-                dict[str, dict[str, list[dict[str, object]]]], self._load_yaml(pattern)
+            yaml = cast(dict[str, dict[str, jaml.YAMLType]], self._load_yaml(pattern))
+
+            self._last_normalizations = self._get_normalizations_dataframe(
+                yaml["Chi2Fcn"]["NormInfo"]
             )
 
-            norm_records = []
-            for norm_info in yaml["Chi2Fcn"]["NormInfo"]:
-                for id_dataset in cast(list[int], norm_info["IDs"]):
-                    norm_records.append(
-                        {
-                            "id_dataset": id_dataset,
-                            "id_dataset_group": norm_info["IDs"],
-                            "scheme": norm_info["Scheme"],
-                            "factor": norm_info["Value"],
-                            # the total penalty for the whole group
-                            "penalty_group_total": norm_info["Penalty"],
-                        }
-                    )
-
-            self._normalizations = pd.DataFrame.from_records(
-                norm_records, index="id_dataset"
-            )
-
-            # It is ambiguous how to distribute the penalty between the datasets. Thus, we first implement the variant in which the penalty of each data set is the total penalty of the group divided by the number of data sets in the group, ...
-            self._normalizations["penalty_dataset_even"] = self._normalizations[
-                "penalty_group_total"
-            ] / self._normalizations["id_dataset_group"].apply(len)
-
-            # ... and second, the variant in which the total penalty of the group is distributed between each data set proportionally to its χ² without penalty.
-            chi2_by_group = self.normalizations["id_dataset_group"].apply(
-                lambda group: self.minimum_value_per_data[group].sum()
-            )
-            self._normalizations["penalty_dataset_proportional"] = (
-                self.minimum_value_per_data.loc[chi2_by_group.index]
-                / chi2_by_group
-                * self._normalizations["penalty_group_total"]
-            )
-
-        return self._normalizations
+        return self._last_normalizations
 
     @property
     def snapshots_parameters(self) -> pd.DataFrame:
@@ -485,6 +534,15 @@ class Chi2(jaml.YAMLWrapper):
         assert self._snapshots_breakdown_nuisance is not None
 
         return self._snapshots_breakdown_nuisance
+
+    @property
+    def snapshots_breakdown_normalizations(self) -> pd.DataFrame:
+        if self._snapshots_breakdown_normalizations is None or self._yaml_changed():
+            self._load_snapshots_without_breakdown_points()
+
+        assert self._snapshots_breakdown_normalizations is not None
+
+        return self._snapshots_breakdown_normalizations
 
     @property
     def snapshots_breakdown_points(self) -> pd.DataFrame:
@@ -565,6 +623,21 @@ class Chi2(jaml.YAMLWrapper):
             self._minimum_nuisance_parameters = minimum_nuisance_parameters
 
         return self._minimum_nuisance_parameters
+
+    @property
+    def minimum_normalizations(
+        self,
+    ) -> pd.DataFrame:
+        if self._minimum_normalizations is None or self._yaml_changed():
+            minimum_normalizations = self.snapshots_breakdown_normalizations.loc[
+                self.minimum_snapshot_index
+            ]
+
+            assert isinstance(minimum_normalizations, pd.DataFrame)
+
+            self._minimum_normalizations = minimum_normalizations
+
+        return self._minimum_normalizations
 
     @property
     def minimum_points(self) -> pd.DataFrame:
@@ -735,7 +808,7 @@ class Chi2(jaml.YAMLWrapper):
             datasets_index=self.datasets.index,
             id_dataset=id_dataset,
             chi2=self.minimum_value_per_data,
-            normalization=self.normalizations["factor"],
+            normalization=self.last_normalizations["factor"],
             num_points_after_cuts=self.num_points,
             sort_by=sort_by,
             sort_ascending=sort_ascending,
@@ -819,14 +892,15 @@ class Chi2(jaml.YAMLWrapper):
             self.minimum_value_per_data.loc[
                 self.minimum_value_per_data.index.isin(id_dataset)
             ].add(
-                -self.normalizations.loc[
-                    self.normalizations.index.isin(id_dataset), "penalty_group_total"
+                -self.last_normalizations.loc[
+                    self.last_normalizations.index.isin(id_dataset),
+                    "penalty_group_total",
                 ],
                 fill_value=0,
             )
             if id_dataset is not None
             else self.minimum_value_per_data.add(
-                -self.normalizations["penalty_group_total"], fill_value=0
+                -self.last_normalizations["penalty_group_total"], fill_value=0
             )
         )
 
@@ -834,14 +908,14 @@ class Chi2(jaml.YAMLWrapper):
 
         chi2_with_penalty = (
             chi2.add(
-                self.normalizations.loc[
-                    self.normalizations.index.isin(id_dataset), penalty_col
+                self.last_normalizations.loc[
+                    self.last_normalizations.index.isin(id_dataset), penalty_col
                 ],
                 fill_value=0,
             )
             if id_dataset is not None
             else chi2.add(
-                self.normalizations[penalty_col],
+                self.last_normalizations[penalty_col],
                 fill_value=0,
             )
         )
