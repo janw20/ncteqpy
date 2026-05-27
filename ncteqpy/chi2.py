@@ -72,6 +72,7 @@ class Chi2(jaml.YAMLWrapper):
     _minimum_value: float | None = None
     _minimum_parameters: pd.Series[float] | None = None
     _minimum_value_per_data: pd.Series[float] | None = None
+    _minimum_value_per_data_with_penalty: pd.DataFrame | None = None
     # fmt: off
     _minimum_nuisance_parameters: pd.Series[npt.NDArray[np.float64]] | None = None  # pyright: ignore[reportInvalidTypeArguments]
     _minimum_normalizations: pd.DataFrame | None = None
@@ -166,9 +167,8 @@ class Chi2(jaml.YAMLWrapper):
                 self._snapshots_breakdown_nuisance.columns.name = "id_dataset"
                 self._snapshots_breakdown_nuisance.index.name = "id_snapshot"
 
-            if (
-                "penaltyBreakdown" in snapshots[0]
-                and snapshots[0]["penaltyBreakdown"] is not None
+            if "penaltyBreakdown" in snapshots[0] and isinstance(
+                snapshots[0]["penaltyBreakdown"], list
             ):
                 self._snapshots_breakdown_normalizations = pd.concat(
                     [
@@ -606,6 +606,30 @@ class Chi2(jaml.YAMLWrapper):
             self._minimum_value_per_data = minimum_per_data
 
         return self._minimum_value_per_data
+
+    @property
+    def minimum_value_per_data_with_penalty(self) -> pd.DataFrame:
+        if self._minimum_value_per_data_with_penalty is None or self._yaml_changed():
+            minimum_with_penalty = pd.concat(
+                2 * [self.minimum_value_per_data],
+                axis="columns",
+                keys=["even", "proportional"],
+            )
+            minimum_with_penalty.loc[:, "even"] = minimum_with_penalty.loc[
+                :, "even"
+            ].add(self.minimum_normalizations["penalty_dataset_even"], fill_value=0)
+            minimum_with_penalty.loc[:, "proportional"] = minimum_with_penalty.loc[
+                :, "proportional"
+            ].add(
+                self.minimum_normalizations["penalty_dataset_proportional"],
+                fill_value=0,
+            )
+
+            self._minimum_value_per_data_with_penalty = minimum_with_penalty
+
+        assert isinstance(self._minimum_value_per_data_with_penalty, pd.DataFrame)
+
+        return self._minimum_value_per_data_with_penalty
 
     @property
     def minimum_nuisance_parameters(
