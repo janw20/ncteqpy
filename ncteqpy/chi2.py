@@ -161,12 +161,21 @@ class Chi2(jaml.YAMLWrapper):
             ):
                 self._snapshots_breakdown_nuisance = pd.DataFrame.from_records(
                     [
-                        {k: np.array(v) for k, v in s["nuisanceCorrBreakdown"].items()}
-                        for s in snapshots
-                    ]
+                        {
+                            "id_snapshot": i,
+                            "id_dataset": k,
+                            "nuisance_parameters": np.array(v),
+                        }
+                        for i, s in enumerate(snapshots)
+                        for k, v in s["nuisanceCorrBreakdown"].items()
+                    ],
+                    index=["id_snapshot", "id_dataset"],
                 )
-                self._snapshots_breakdown_nuisance.columns.name = "id_dataset"
-                self._snapshots_breakdown_nuisance.index.name = "id_snapshot"
+                self._snapshots_breakdown_nuisance["penalty"] = (
+                    self._snapshots_breakdown_nuisance["nuisance_parameters"].apply(
+                        lambda x: (x**2).sum()
+                    )
+                )
 
             if "penaltyBreakdown" in snapshots[0] and isinstance(
                 snapshots[0]["penaltyBreakdown"], list
