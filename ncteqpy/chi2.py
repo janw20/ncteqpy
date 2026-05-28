@@ -1789,8 +1789,9 @@ class Chi2(jaml.YAMLWrapper):
                 ].iloc[0]
                 labels_info_legend = [
                     f"{labels_info['experiment']} (ID {labels_info["id_dataset"]})",
-                    f"${labels.reaction_to_latex(labels_info["reaction"])}$",
                 ]
+                if not pd.isna(labels_info["reaction"]) and len(labels_info["reaction"]) > 0:
+                    labels_info_legend.append(f"${labels.reaction_to_latex(labels_info["reaction"])}$")
 
                 kwargs_legend_info_default = {
                     "order": -1,
