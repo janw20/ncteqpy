@@ -285,6 +285,121 @@ class Chi2(jaml.YAMLWrapper):
                 inplace=True,
             )
 
+            # calculate correlation penalties, first the evenly distributed ones...
+
+            # number of points per data set, with multi-index (`id_snapshot`, `id_dataset`)
+            num_points = self._snapshots_breakdown_points.groupby(
+                ["id_snapshot", "id_dataset"]
+            ).size()
+            # evenly distributed penalty per data set, with multi-index (`id_snapshot`, `id_dataset`)
+            penalty_corr_even = (
+                self.snapshots_breakdown_nuisance["penalty"] / num_points
+            )
+            penalty_corr_even.name = "penalty_corr_even"
+
+            # the points of each data set get the same penalty_corr_even
+            self._snapshots_breakdown_points = self._snapshots_breakdown_points.join(
+                penalty_corr_even, on=["id_snapshot", "id_dataset"]
+            ).fillna(dict(penalty_corr_even=0))
+
+            # ...and second the proportionally distributed ones
+
+            # chi2 without penalty of each data set, with multi-index (`id_snapshot`, `id_dataset`)
+            chi2_data = self._snapshots_breakdown_points.groupby(
+                ["id_snapshot", "id_dataset"]
+            )["chi2_shifted"].sum()
+            # proportionally distributed penalty for each data set, with multi-index (`id_snapshot`, `id_point`, `id_dataset`)
+            penalty_corr_prop = (
+                self._snapshots_breakdown_points.set_index("id_dataset", append=True)[
+                    "chi2_shifted"
+                ]
+                / chi2_data
+                * self.snapshots_breakdown_nuisance["penalty"]
+            )
+            # get only the data sets that are actually in the snapshots, otherwise setting the column in _snapshots_breakdown_points does not work
+            penalty_corr_prop = penalty_corr_prop[
+                penalty_corr_prop.index.get_level_values("id_dataset").isin(
+                    self._snapshots_breakdown_points["id_dataset"].unique()
+                )
+            ]
+            self._snapshots_breakdown_points["penalty_corr_prop"] = (
+                penalty_corr_prop.reset_index("id_dataset", drop=True).fillna(0)
+            )
+
+            # calculate normalization penalties, first the evenly distributed ones...
+
+            # number of points of each group, with multi-index (`id_snapshot`, `id_dataset`)
+            num_points_groups = (
+                self._snapshots_breakdown_points.groupby(["id_snapshot", "id_dataset"])
+                .size()
+                .groupby(
+                    [
+                        "id_snapshot",
+                        self.snapshots_breakdown_normalizations["id_dataset_group"],
+                    ],
+                )
+                .transform("sum")
+            )
+            # evenly distributed penalty per data set, with multi-index (`id_snapshot`, `id_dataset`)
+            penalty_even = (
+                self.snapshots_breakdown_normalizations["penalty_group_total"]
+                / num_points_groups
+            )
+            penalty_even.name = "penalty_norm_even"
+
+            # the points of each data set get the same penalty_norm_even
+            self._snapshots_breakdown_points = self._snapshots_breakdown_points.join(
+                penalty_even, on=["id_snapshot", "id_dataset"]
+            ).fillna(dict(penalty_norm_even=0))
+
+            # ...and second the proportionally distributed ones
+
+            # chi2 without penalty of each group, with multi-index (`id_snapshot`, `id_dataset`)
+            chi2_groups = (
+                self._snapshots_breakdown_points.groupby(["id_snapshot", "id_dataset"])[
+                    "chi2_shifted"
+                ]
+                .sum()
+                .groupby(
+                    [
+                        "id_snapshot",
+                        self.snapshots_breakdown_normalizations["id_dataset_group"],
+                    ],
+                )
+                .transform("sum")
+            )
+            # proportionally distributed penalty for each data set, with multi-index (`id_snapshot`, `id_point`, `id_dataset`)
+            penalty_prop = (
+                self._snapshots_breakdown_points.set_index("id_dataset", append=True)[
+                    "chi2_shifted"
+                ]
+                / chi2_groups
+                * self.snapshots_breakdown_normalizations["penalty_group_total"]
+            )
+            # get only the data sets that are actually in the snapshots, otherwise setting the column in _snapshots_breakdown_points does not work
+            penalty_prop = penalty_prop[
+                penalty_prop.index.get_level_values("id_dataset").isin(
+                    self._snapshots_breakdown_points["id_dataset"].unique()
+                )
+            ]
+            self._snapshots_breakdown_points["penalty_norm_prop"] = (
+                penalty_prop.reset_index("id_dataset", drop=True).fillna(0)
+            )
+
+            # add penalties to chi2_shifted
+
+            self._snapshots_breakdown_points["chi2_shifted_with_even_penalty"] = (
+                self._snapshots_breakdown_points["chi2_shifted"]
+                + self._snapshots_breakdown_points["penalty_corr_even"]
+                + self._snapshots_breakdown_points["penalty_norm_even"]
+            )
+
+            self._snapshots_breakdown_points["chi2_shifted_with_prop_penalty"] = (
+                self._snapshots_breakdown_points["chi2_shifted"]
+                + self._snapshots_breakdown_points["penalty_corr_prop"]
+                + self._snapshots_breakdown_points["penalty_norm_prop"]
+            )
+
             self._pickle(self._snapshots_breakdown_points, pickle_name)
 
     @property
@@ -1013,8 +1128,11 @@ class Chi2(jaml.YAMLWrapper):
         self,
         bin_width: float | None = None,
         subplot_groupby: DatasetsGroupBy | None = None,
+        stack_groupby: DatasetsGroupBy | None = None,
+        bar_labels: int | tuple[int, int] | None = None,
         kwargs_subplots: dict[str, Any] = {},
         kwargs_histogram: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_bar_labels: dict[str, Any] | None = {},
         kwargs_gaussian: dict[str, Any] | list[dict[str, Any] | None] = {},
         kwargs_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
         kwargs_gaussian_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
@@ -1048,8 +1166,11 @@ class Chi2(jaml.YAMLWrapper):
             S_E=self.minimum_S_E,
             bin_width=bin_width,
             subplot_groupby=subplot_groupby,
+            stack_groupby=stack_groupby,
+            label_bars=bar_labels,
             kwargs_subplots=kwargs_subplots,
             kwargs_histogram=kwargs_histogram,
+            kwargs_bar_labels=kwargs_bar_labels,
             kwargs_gaussian=kwargs_gaussian,
             kwargs_fit=kwargs_fit,
             kwargs_gaussian_fit=kwargs_gaussian_fit,
@@ -1065,6 +1186,37 @@ class Chi2(jaml.YAMLWrapper):
     #     kwargs_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
     #     kwargs_gaussian_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
     # ) -> AxesGrid:
+
+    def plot_normalization_histogram(
+        self,
+        bin_width: float | None = None,
+        subplot_groupby: DatasetsGroupBy | None = None,
+        stack_groupby: DatasetsGroupBy | None = None,
+        bar_labels: int | tuple[int, int] | None = None,
+        gaussian: bool = True,
+        gaussian_fit: bool = True,
+        kwargs_subplots: dict[str, Any] = {},
+        kwargs_histogram: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_bar_labels: dict[str, Any] | None = {},
+        kwargs_gaussian: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_gaussian_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
+    ) -> AxesGrid:
+        return plot_S_E_histogram(
+            S_E=self.last_normalizations["factor"],
+            bin_width=bin_width,
+            subplot_groupby=subplot_groupby,
+            stack_groupby=stack_groupby,
+            label_bars=bar_labels,
+            gaussian=gaussian,
+            gaussian_fit=gaussian_fit,
+            kwargs_subplots=kwargs_subplots,
+            kwargs_histogram=kwargs_histogram,
+            kwargs_bar_labels=kwargs_bar_labels,
+            kwargs_gaussian=kwargs_gaussian,
+            kwargs_fit=kwargs_fit,
+            kwargs_gaussian_fit=kwargs_gaussian_fit,
+        )
 
     @overload
     def plot_data_vs_theory(
@@ -1800,8 +1952,13 @@ class Chi2(jaml.YAMLWrapper):
                 labels_info_legend = [
                     f"{labels_info['experiment']} (ID {labels_info["id_dataset"]})",
                 ]
-                if not pd.isna(labels_info["reaction"]) and len(labels_info["reaction"]) > 0:
-                    labels_info_legend.append(f"${labels.reaction_to_latex(labels_info["reaction"])}$")
+                if (
+                    not pd.isna(labels_info["reaction"])
+                    and len(labels_info["reaction"]) > 0
+                ):
+                    labels_info_legend.append(
+                        f"${labels.reaction_to_latex(labels_info["reaction"])}$"
+                    )
 
                 kwargs_legend_info_default = {
                     "order": -1,
