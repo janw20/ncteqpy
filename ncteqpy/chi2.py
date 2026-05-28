@@ -10,6 +10,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.patches import Patch
+from pandas.core.indexes.frozen import FrozenList
 from typing_extensions import (
     Any,
     Iterator,
@@ -454,7 +455,7 @@ class Chi2(jaml.YAMLWrapper):
                 norm_records.append(
                     {
                         "id_dataset": id_dataset,
-                        "id_dataset_group": norm_info["IDs"],
+                        "id_dataset_group": FrozenList(norm_info["IDs"]),
                         "scheme": norm_info["Scheme"],
                         "factor": norm_info["Value"],
                         # the total penalty for the whole group
