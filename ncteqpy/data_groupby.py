@@ -13,7 +13,6 @@ from typing_extensions import Any, Callable, Hashable, Literal, Sequence, cast
 from ncteqpy._typing import SequenceNotStr
 from ncteqpy.labels import nucleus_to_latex
 
-
 class DatasetsGroupBy:
     """Class to wrap a `pandas` `DataFrameGroupBy`, specialized for grouping data sets."""
 
@@ -35,7 +34,7 @@ class DatasetsGroupBy:
         self,
         datasets_index: pd.DataFrame,
         by: str | list[str],
-        grouper: pd.Series[Any] | None = None,
+        grouper: pd.Series[Any] | list[pd.Series[Any]] | None = None,
         sort_ids: Literal["ascending", "descending"] | None = "ascending",
         sort: Literal["ascending", "descending"] | None = None,
         order: SequenceNotStr[Hashable] | None = None,
@@ -51,8 +50,8 @@ class DatasetsGroupBy:
             Index of the datasets in the format given by `ncteqpy.Datasets.index`.
         by : str | list[str]
             Key(s) to group the data sets by, must be column labels of `datasets_index`, e.g., `"type_experiment"` or `["A_heavier", "Z_heavier"]`.
-        grouper : pd.Series | None, optional
-            `Series` mapping some or all dataset IDs to group values. This takes precedence over the values in `datasets_index`.
+        grouper : pd.Series | list[pd.Series[Any]] | None, optional
+            `Series` or list of `Series` mapping some or all dataset IDs to group values, overwriting these values in `datasets_index`. The `name` property of the `Series` decides which column to overwrite (if `name` is None, `by` is used as the column).
         sort_ids : Literal["ascending", "descending"] | None, optional
             If the dataset IDs should be sorted in ascending or descending order (before sorting the group values, if `sort` or `order` are given), by default "ascending".
         sort : Literal["ascending", "descending"] | None, optional
@@ -66,16 +65,27 @@ class DatasetsGroupBy:
         props : dict[Hashable, dict[str, Any]] | None, optional
             Matplotlib properties for some or all group values, by default None. Must be given as a map from the group values to a dictionary with matplotlib properties, e.g., the latter could be `{"color": "red"}`. If `props` is None, the property cycle in `matplotlib.rcParams["axes.prop_cycle"]` is used.
         """
-        self._datasets_index = datasets_index.copy().set_index("id_dataset", drop=False)
+        self._datasets_index = datasets_index.copy().set_index("id_dataset", drop=True)
+        self._datasets_index["id_dataset"] = (
+            datasets_index["id_dataset"].copy().to_numpy()
+        )
         self._keys = by
 
         if grouper is not None:
-            grouper.name = FrozenList(by) if isinstance(by, list) else by
-            self._datasets_index.update(
-                pd.DataFrame(
-                    grouper.to_list(), columns=np.atleast_1d(by), index=grouper.index
+            if isinstance(grouper, pd.Series):
+                grouper = [grouper]
+
+            for grouper_i in grouper:
+                # The name of a grouper decides which column to overwrite in the dataset index
+                if grouper_i.name is None:
+                    grouper_i.name = FrozenList(by) if isinstance(by, list) else by
+                self._datasets_index.update(
+                    pd.DataFrame(
+                        grouper_i.to_list(),
+                        columns=np.atleast_1d(grouper_i.name),  # pyright: ignore[reportCallIssue,reportArgumentType]  # fmt: skip
+                        index=grouper_i.index,
+                    )
                 )
-            )
 
         if props is not None:
             self._props = pd.DataFrame(props).T
@@ -99,7 +109,10 @@ class DatasetsGroupBy:
             )
 
         if order is not None:
-            order = list(order) + self._grouper[~self._grouper.isin(order)].tolist()
+            order = (
+                list(order)
+                + self._grouper[~self._grouper.isin(order)].drop_duplicates().tolist()
+            )
             order_key = cast(
                 Callable[[pd.Series], pd.Series],
                 lambda key: pd.Series(np.arange(len(order)), index=order)[key],
