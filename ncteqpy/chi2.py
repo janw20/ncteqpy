@@ -10,7 +10,16 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.patches import Patch
-from typing_extensions import Any, Iterator, Literal, Sequence, cast, overload
+from pandas.core.indexes.frozen import FrozenList
+from typing_extensions import (
+    Any,
+    Iterator,
+    Literal,
+    Sequence,
+    TypedDict,
+    cast,
+    overload,
+)
 
 import ncteqpy.data as data
 import ncteqpy.jaml as jaml
@@ -51,20 +60,23 @@ class Chi2(jaml.YAMLWrapper):
     _last_value: float | None = None
     _last_value_with_penalty: float | None = None
     _last_value_per_data: pd.Series[float] | None = None
-    _normalizations: pd.DataFrame | None = None
+    _last_normalizations: pd.DataFrame | None = None
     _snapshots_parameters: pd.DataFrame | None = None
     _snapshots_values: npt.NDArray[np.float64] | None = None
     _snapshots_breakdown_points: pd.DataFrame | None = None
     _snapshots_breakdown_datasets: pd.DataFrame | None = None
     _snapshots_breakdown_nuisance: pd.DataFrame | None = None
+    _snapshots_breakdown_normalizations: pd.DataFrame | None = None
     _num_points: pd.Series[int] | None = None
 
     _minimum_snapshot_index: int | None = None
     _minimum_value: float | None = None
     _minimum_parameters: pd.Series[float] | None = None
     _minimum_value_per_data: pd.Series[float] | None = None
+    _minimum_value_per_data_with_penalty: pd.DataFrame | None = None
     # fmt: off
     _minimum_nuisance_parameters: pd.Series[npt.NDArray[np.float64]] | None = None  # pyright: ignore[reportInvalidTypeArguments]
+    _minimum_normalizations: pd.DataFrame | None = None
     # fmt: on
     _minimum_points: pd.DataFrame | None = None
     _minimum_S_E: pd.Series[float] | None = None
@@ -94,12 +106,17 @@ class Chi2(jaml.YAMLWrapper):
         self._snapshots_breakdown_nuisance = cast(
             pd.DataFrame | None, self._unpickle("chi2_snapshots_breakdown_nuisance")
         )
+        self._snapshots_breakdown_normalizations = cast(
+            pd.DataFrame | None,
+            self._unpickle("chi2_snapshots_breakdown_normalizations"),
+        )
 
         if (
             self._snapshots_parameters is None
             or self._snapshots_values is None
             or self._snapshots_breakdown_datasets is None
             or self._snapshots_breakdown_nuisance is None
+            or self._snapshots_breakdown_normalizations is None
         ):
             pattern = jaml.Pattern(
                 {
@@ -110,6 +127,7 @@ class Chi2(jaml.YAMLWrapper):
                                 "chi2Value": None,
                                 "perDataBreakdown": None,
                                 "nuisanceCorrBreakdown": None,
+                                "penaltyBreakdown": None,
                             }
                         ]
                     }
@@ -143,12 +161,34 @@ class Chi2(jaml.YAMLWrapper):
             ):
                 self._snapshots_breakdown_nuisance = pd.DataFrame.from_records(
                     [
-                        {k: np.array(v) for k, v in s["nuisanceCorrBreakdown"].items()}
-                        for s in snapshots
-                    ]
+                        {
+                            "id_snapshot": i,
+                            "id_dataset": k,
+                            "nuisance_parameters": np.array(v),
+                        }
+                        for i, s in enumerate(snapshots)
+                        for k, v in s["nuisanceCorrBreakdown"].items()
+                    ],
+                    index=["id_snapshot", "id_dataset"],
                 )
-                self._snapshots_breakdown_nuisance.columns.name = "id_dataset"
-                self._snapshots_breakdown_nuisance.index.name = "id_snapshot"
+                self._snapshots_breakdown_nuisance["penalty"] = (
+                    self._snapshots_breakdown_nuisance["nuisance_parameters"].apply(
+                        lambda x: (x**2).sum()
+                    )
+                )
+
+            if "penaltyBreakdown" in snapshots[0] and isinstance(
+                snapshots[0]["penaltyBreakdown"], list
+            ):
+                self._snapshots_breakdown_normalizations = pd.concat(
+                    [
+                        self._get_normalizations_dataframe(s["penaltyBreakdown"])
+                        for s in snapshots
+                    ],
+                    axis=0,
+                    keys=range(len(snapshots)),
+                    names=["id_snapshot"],
+                )
 
             self._pickle(self._snapshots_parameters, "chi2_snapshots_parameters")
             self._pickle(self._snapshots_values, "chi2_snapshots_values")
@@ -218,14 +258,14 @@ class Chi2(jaml.YAMLWrapper):
 
             # multiply the theory for which normalization is fitted with its corresponding factor
             mask = self._snapshots_breakdown_points["id_dataset"].isin(
-                self.normalizations.index
+                self.last_normalizations.index
             )
             # `theory_with_normalization_only` is NaN for data sets that are not normalization-corrected
             self._snapshots_breakdown_points.loc[
                 mask, "theory_with_normalization_only"
             ] = (
                 self._snapshots_breakdown_points.loc[mask, "theory"]
-                * self.normalizations.loc[
+                * self.last_normalizations.loc[
                     self._snapshots_breakdown_points.loc[mask, "id_dataset"]
                 ]["factor"].to_numpy()
             )
@@ -243,6 +283,121 @@ class Chi2(jaml.YAMLWrapper):
                     ]
                 },
                 inplace=True,
+            )
+
+            # calculate correlation penalties, first the evenly distributed ones...
+
+            # number of points per data set, with multi-index (`id_snapshot`, `id_dataset`)
+            num_points = self._snapshots_breakdown_points.groupby(
+                ["id_snapshot", "id_dataset"]
+            ).size()
+            # evenly distributed penalty per data set, with multi-index (`id_snapshot`, `id_dataset`)
+            penalty_corr_even = (
+                self.snapshots_breakdown_nuisance["penalty"] / num_points
+            )
+            penalty_corr_even.name = "penalty_corr_even"
+
+            # the points of each data set get the same penalty_corr_even
+            self._snapshots_breakdown_points = self._snapshots_breakdown_points.join(
+                penalty_corr_even, on=["id_snapshot", "id_dataset"]
+            ).fillna(dict(penalty_corr_even=0))
+
+            # ...and second the proportionally distributed ones
+
+            # chi2 without penalty of each data set, with multi-index (`id_snapshot`, `id_dataset`)
+            chi2_data = self._snapshots_breakdown_points.groupby(
+                ["id_snapshot", "id_dataset"]
+            )["chi2_shifted"].sum()
+            # proportionally distributed penalty for each data set, with multi-index (`id_snapshot`, `id_point`, `id_dataset`)
+            penalty_corr_prop = (
+                self._snapshots_breakdown_points.set_index("id_dataset", append=True)[
+                    "chi2_shifted"
+                ]
+                / chi2_data
+                * self.snapshots_breakdown_nuisance["penalty"]
+            )
+            # get only the data sets that are actually in the snapshots, otherwise setting the column in _snapshots_breakdown_points does not work
+            penalty_corr_prop = penalty_corr_prop[
+                penalty_corr_prop.index.get_level_values("id_dataset").isin(
+                    self._snapshots_breakdown_points["id_dataset"].unique()
+                )
+            ]
+            self._snapshots_breakdown_points["penalty_corr_prop"] = (
+                penalty_corr_prop.reset_index("id_dataset", drop=True).fillna(0)
+            )
+
+            # calculate normalization penalties, first the evenly distributed ones...
+
+            # number of points of each group, with multi-index (`id_snapshot`, `id_dataset`)
+            num_points_groups = (
+                self._snapshots_breakdown_points.groupby(["id_snapshot", "id_dataset"])
+                .size()
+                .groupby(
+                    [
+                        "id_snapshot",
+                        self.snapshots_breakdown_normalizations["id_dataset_group"],
+                    ],
+                )
+                .transform("sum")
+            )
+            # evenly distributed penalty per data set, with multi-index (`id_snapshot`, `id_dataset`)
+            penalty_even = (
+                self.snapshots_breakdown_normalizations["penalty_group_total"]
+                / num_points_groups
+            )
+            penalty_even.name = "penalty_norm_even"
+
+            # the points of each data set get the same penalty_norm_even
+            self._snapshots_breakdown_points = self._snapshots_breakdown_points.join(
+                penalty_even, on=["id_snapshot", "id_dataset"]
+            ).fillna(dict(penalty_norm_even=0))
+
+            # ...and second the proportionally distributed ones
+
+            # chi2 without penalty of each group, with multi-index (`id_snapshot`, `id_dataset`)
+            chi2_groups = (
+                self._snapshots_breakdown_points.groupby(["id_snapshot", "id_dataset"])[
+                    "chi2_shifted"
+                ]
+                .sum()
+                .groupby(
+                    [
+                        "id_snapshot",
+                        self.snapshots_breakdown_normalizations["id_dataset_group"],
+                    ],
+                )
+                .transform("sum")
+            )
+            # proportionally distributed penalty for each data set, with multi-index (`id_snapshot`, `id_point`, `id_dataset`)
+            penalty_prop = (
+                self._snapshots_breakdown_points.set_index("id_dataset", append=True)[
+                    "chi2_shifted"
+                ]
+                / chi2_groups
+                * self.snapshots_breakdown_normalizations["penalty_group_total"]
+            )
+            # get only the data sets that are actually in the snapshots, otherwise setting the column in _snapshots_breakdown_points does not work
+            penalty_prop = penalty_prop[
+                penalty_prop.index.get_level_values("id_dataset").isin(
+                    self._snapshots_breakdown_points["id_dataset"].unique()
+                )
+            ]
+            self._snapshots_breakdown_points["penalty_norm_prop"] = (
+                penalty_prop.reset_index("id_dataset", drop=True).fillna(0)
+            )
+
+            # add penalties to chi2_shifted
+
+            self._snapshots_breakdown_points["chi2_shifted_with_even_penalty"] = (
+                self._snapshots_breakdown_points["chi2_shifted"]
+                + self._snapshots_breakdown_points["penalty_corr_even"]
+                + self._snapshots_breakdown_points["penalty_norm_even"]
+            )
+
+            self._snapshots_breakdown_points["chi2_shifted_with_prop_penalty"] = (
+                self._snapshots_breakdown_points["chi2_shifted"]
+                + self._snapshots_breakdown_points["penalty_corr_prop"]
+                + self._snapshots_breakdown_points["penalty_norm_prop"]
             )
 
             self._pickle(self._snapshots_breakdown_points, pickle_name)
@@ -407,49 +562,67 @@ class Chi2(jaml.YAMLWrapper):
 
         return self._last_value_per_data
 
+    def _get_normalizations_dataframe(self, yaml: jaml.YAMLType) -> pd.DataFrame:
+        if not isinstance(yaml, list):
+            raise ValueError("yaml must be of type list")
+
+        class NormInfoEntry(TypedDict):
+            IDs: list[int]
+            Scheme: int
+            Value: float
+            Penalty: float
+
+        norm_records = []
+
+        for norm_info in cast(list[NormInfoEntry], yaml):
+            for id_dataset in norm_info["IDs"]:
+                norm_records.append(
+                    {
+                        "id_dataset": id_dataset,
+                        "id_dataset_group": FrozenList(norm_info["IDs"]),
+                        "scheme": norm_info["Scheme"],
+                        "factor": norm_info["Value"],
+                        # the total penalty for the whole group
+                        "penalty_group_total": norm_info["Penalty"],
+                    }
+                )
+
+        normalizations = pd.DataFrame.from_records(norm_records, index="id_dataset")
+
+        # It is ambiguous how to distribute the penalty between the datasets. Thus, we first implement the variant in which the penalty of each data set is the total penalty of the group divided by the number of data sets in the group, ...
+        normalizations["penalty_dataset_even"] = normalizations[
+            "penalty_group_total"
+        ] / normalizations["id_dataset_group"].apply(len)
+
+        # ... and second, the variant in which the total penalty of the group is distributed between each data set proportionally to its χ² without penalty.
+        chi2_by_group = normalizations["id_dataset_group"].apply(
+            lambda group: self.minimum_value_per_data[group].sum()
+        )
+
+        normalizations.loc[chi2_by_group.index, "penalty_dataset_proportional"] = (
+            self.minimum_value_per_data.loc[chi2_by_group.index]
+            / chi2_by_group
+            * normalizations.loc[chi2_by_group.index, "penalty_group_total"]
+        )
+
+        # for data sets that did not survive the cuts, penalty_dataset_proportional was set to nan in the previous statement, so we set it to 0
+        normalizations.loc[
+            chi2_by_group[chi2_by_group == 0].index, "penalty_dataset_proportional"
+        ] = 0
+
+        return normalizations
+
     @property
-    def normalizations(self) -> pd.DataFrame:
-        if self._normalizations is None or self._yaml_changed():
+    def last_normalizations(self) -> pd.DataFrame:
+        if self._last_normalizations is None or self._yaml_changed():
             pattern = jaml.Pattern({"Chi2Fcn": {"NormInfo": None}})
-            yaml = cast(
-                dict[str, dict[str, list[dict[str, object]]]], self._load_yaml(pattern)
+            yaml = cast(dict[str, dict[str, jaml.YAMLType]], self._load_yaml(pattern))
+
+            self._last_normalizations = self._get_normalizations_dataframe(
+                yaml["Chi2Fcn"]["NormInfo"]
             )
 
-            norm_records = []
-            for norm_info in yaml["Chi2Fcn"]["NormInfo"]:
-                for id_dataset in cast(list[int], norm_info["IDs"]):
-                    norm_records.append(
-                        {
-                            "id_dataset": id_dataset,
-                            "factor": norm_info["Value"],
-                            "penalty": norm_info["Penalty"],
-                            "factor": norm_info["Value"],
-                            # the total penalty for the whole group
-                            "penalty_group_total": norm_info["Penalty"],
-                            "scheme": norm_info["Scheme"],
-                        }
-                    )
-
-            self._normalizations = pd.DataFrame.from_records(
-                norm_records, index="id_dataset"
-            )
-
-            # It is ambiguous how to distribute the penalty between the datasets. Thus, we first implement the variant in which the penalty of each data set is the total penalty of the group divided by the number of data sets in the group, ...
-            self._normalizations["penalty_dataset_even"] = self._normalizations[
-                "penalty_group_total"
-            ] / self._normalizations["id_dataset_group"].apply(len)
-
-            # ... and second, the variant in which the total penalty of the group is distributed between each data set proportionally to its χ² without penalty.
-            chi2_by_group = self.normalizations["id_dataset_group"].apply(
-                lambda group: self.minimum_value_per_data[group].sum()
-            )
-            self._normalizations["penalty_dataset_proportional"] = (
-                self.minimum_value_per_data.loc[chi2_by_group.index]
-                / chi2_by_group
-                * self._normalizations["penalty_group_total"]
-            )
-
-        return self._normalizations
+        return self._last_normalizations
 
     @property
     def snapshots_parameters(self) -> pd.DataFrame:
@@ -486,6 +659,15 @@ class Chi2(jaml.YAMLWrapper):
         assert self._snapshots_breakdown_nuisance is not None
 
         return self._snapshots_breakdown_nuisance
+
+    @property
+    def snapshots_breakdown_normalizations(self) -> pd.DataFrame:
+        if self._snapshots_breakdown_normalizations is None or self._yaml_changed():
+            self._load_snapshots_without_breakdown_points()
+
+        assert self._snapshots_breakdown_normalizations is not None
+
+        return self._snapshots_breakdown_normalizations
 
     @property
     def snapshots_breakdown_points(self) -> pd.DataFrame:
@@ -551,6 +733,30 @@ class Chi2(jaml.YAMLWrapper):
         return self._minimum_value_per_data
 
     @property
+    def minimum_value_per_data_with_penalty(self) -> pd.DataFrame:
+        if self._minimum_value_per_data_with_penalty is None or self._yaml_changed():
+            minimum_with_penalty = pd.concat(
+                2 * [self.minimum_value_per_data],
+                axis="columns",
+                keys=["even", "prop"],
+            )
+            minimum_with_penalty.loc[:, "even"] = minimum_with_penalty.loc[
+                :, "even"
+            ].add(self.minimum_normalizations["penalty_dataset_even"], fill_value=0)
+            minimum_with_penalty.loc[:, "prop"] = minimum_with_penalty.loc[
+                :, "prop"
+            ].add(
+                self.minimum_normalizations["penalty_dataset_proportional"],
+                fill_value=0,
+            )
+
+            self._minimum_value_per_data_with_penalty = minimum_with_penalty
+
+        assert isinstance(self._minimum_value_per_data_with_penalty, pd.DataFrame)
+
+        return self._minimum_value_per_data_with_penalty
+
+    @property
     def minimum_nuisance_parameters(
         self,
     ) -> pd.Series[
@@ -566,6 +772,21 @@ class Chi2(jaml.YAMLWrapper):
             self._minimum_nuisance_parameters = minimum_nuisance_parameters
 
         return self._minimum_nuisance_parameters
+
+    @property
+    def minimum_normalizations(
+        self,
+    ) -> pd.DataFrame:
+        if self._minimum_normalizations is None or self._yaml_changed():
+            minimum_normalizations = self.snapshots_breakdown_normalizations.loc[
+                self.minimum_snapshot_index
+            ]
+
+            assert isinstance(minimum_normalizations, pd.DataFrame)
+
+            self._minimum_normalizations = minimum_normalizations
+
+        return self._minimum_normalizations
 
     @property
     def minimum_points(self) -> pd.DataFrame:
@@ -736,7 +957,7 @@ class Chi2(jaml.YAMLWrapper):
             datasets_index=self.datasets.index,
             id_dataset=id_dataset,
             chi2=self.minimum_value_per_data,
-            normalization=self.normalizations["factor"],
+            normalization=self.last_normalizations["factor"],
             num_points_after_cuts=self.num_points,
             sort_by=sort_by,
             sort_ascending=sort_ascending,
@@ -820,14 +1041,15 @@ class Chi2(jaml.YAMLWrapper):
             self.minimum_value_per_data.loc[
                 self.minimum_value_per_data.index.isin(id_dataset)
             ].add(
-                -self.normalizations.loc[
-                    self.normalizations.index.isin(id_dataset), "penalty_group_total"
+                -self.last_normalizations.loc[
+                    self.last_normalizations.index.isin(id_dataset),
+                    "penalty_group_total",
                 ],
                 fill_value=0,
             )
             if id_dataset is not None
             else self.minimum_value_per_data.add(
-                -self.normalizations["penalty_group_total"], fill_value=0
+                -self.last_normalizations["penalty_group_total"], fill_value=0
             )
         )
 
@@ -835,14 +1057,14 @@ class Chi2(jaml.YAMLWrapper):
 
         chi2_with_penalty = (
             chi2.add(
-                self.normalizations.loc[
-                    self.normalizations.index.isin(id_dataset), penalty_col
+                self.last_normalizations.loc[
+                    self.last_normalizations.index.isin(id_dataset), penalty_col
                 ],
                 fill_value=0,
             )
             if id_dataset is not None
             else chi2.add(
-                self.normalizations[penalty_col],
+                self.last_normalizations[penalty_col],
                 fill_value=0,
             )
         )
@@ -906,8 +1128,11 @@ class Chi2(jaml.YAMLWrapper):
         self,
         bin_width: float | None = None,
         subplot_groupby: DatasetsGroupBy | None = None,
+        stack_groupby: DatasetsGroupBy | None = None,
+        bar_labels: int | tuple[int, int] | None = None,
         kwargs_subplots: dict[str, Any] = {},
         kwargs_histogram: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_bar_labels: dict[str, Any] | None = {},
         kwargs_gaussian: dict[str, Any] | list[dict[str, Any] | None] = {},
         kwargs_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
         kwargs_gaussian_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
@@ -941,8 +1166,11 @@ class Chi2(jaml.YAMLWrapper):
             S_E=self.minimum_S_E,
             bin_width=bin_width,
             subplot_groupby=subplot_groupby,
+            stack_groupby=stack_groupby,
+            label_bars=bar_labels,
             kwargs_subplots=kwargs_subplots,
             kwargs_histogram=kwargs_histogram,
+            kwargs_bar_labels=kwargs_bar_labels,
             kwargs_gaussian=kwargs_gaussian,
             kwargs_fit=kwargs_fit,
             kwargs_gaussian_fit=kwargs_gaussian_fit,
@@ -959,6 +1187,37 @@ class Chi2(jaml.YAMLWrapper):
     #     kwargs_gaussian_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
     # ) -> AxesGrid:
 
+    def plot_normalization_histogram(
+        self,
+        bin_width: float | None = None,
+        subplot_groupby: DatasetsGroupBy | None = None,
+        stack_groupby: DatasetsGroupBy | None = None,
+        bar_labels: int | tuple[int, int] | None = None,
+        gaussian: bool = True,
+        gaussian_fit: bool = True,
+        kwargs_subplots: dict[str, Any] = {},
+        kwargs_histogram: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_bar_labels: dict[str, Any] | None = {},
+        kwargs_gaussian: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_gaussian_fit: dict[str, Any] | list[dict[str, Any] | None] = {},
+    ) -> AxesGrid:
+        return plot_S_E_histogram(
+            S_E=self.last_normalizations["factor"],
+            bin_width=bin_width,
+            subplot_groupby=subplot_groupby,
+            stack_groupby=stack_groupby,
+            label_bars=bar_labels,
+            gaussian=gaussian,
+            gaussian_fit=gaussian_fit,
+            kwargs_subplots=kwargs_subplots,
+            kwargs_histogram=kwargs_histogram,
+            kwargs_bar_labels=kwargs_bar_labels,
+            kwargs_gaussian=kwargs_gaussian,
+            kwargs_fit=kwargs_fit,
+            kwargs_gaussian_fit=kwargs_gaussian_fit,
+        )
+
     @overload
     def plot_data_vs_theory(
         self,
@@ -966,7 +1225,9 @@ class Chi2(jaml.YAMLWrapper):
         type_experiment: str | None = ...,
         x_variable: str | list[str] | Literal["fallback"] | None = ...,
         xlabel: str | dict[str, str] | Literal["fallback"] | None = ...,
+        xunit: str | dict[str, str] = ...,
         ylabel: str | Literal["fallback"] | None = ...,
+        yunit: str = ...,
         xscale: str | None = ...,
         yscale: str | None = ...,
         title: str | None = ...,
@@ -981,11 +1242,13 @@ class Chi2(jaml.YAMLWrapper):
             | None
         ) = ...,
         plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = ...,
-        subplot_groupby: str | None = ...,
+        subplot_groupby: str | list[str] | None = ...,
         subplot_label: Literal["legend"] | None = ...,
         subplot_label_format: str | None = ...,
         chi2_annotation: bool = ...,
-        chi2_legend: LegendPos = ...,
+        chi2_legend_total: LegendPos = ...,
+        chi2_legend_subplots: bool = ...,
+        chi2_penalty_convention: Literal["even", "prop", "without"] = ...,
         info_legend: LegendPos = ...,
         curve_groupby: str | list[str] | Literal["fallback"] | None = ...,
         apply_normalization: bool = ...,
@@ -1003,7 +1266,8 @@ class Chi2(jaml.YAMLWrapper):
         kwargs_ylabel: dict[str, Any] = ...,
         kwargs_title: dict[str, Any] = ...,
         kwargs_legend: dict[str, Any] = ...,
-        kwargs_legend_chi2: dict[str, Any] = ...,
+        kwargs_legend_chi2_total: dict[str, Any] = ...,
+        kwargs_legend_chi2_subplots: dict[str, Any] | list[dict[str, Any] | None] = ...,
         kwargs_legend_info: dict[str, Any] = ...,
         kwargs_legend_curves: dict[str, Any] = ...,
         kwargs_legend_subplots: dict[str, Any] | list[dict[str, Any] | None] = ...,
@@ -1013,7 +1277,6 @@ class Chi2(jaml.YAMLWrapper):
         *,
         ax: None = ...,
         iterate: Literal[False] = ...,
-        **kwargs: Any,
     ) -> AxesGrid | list[AxesGrid]:
         """Plot data vs. theory (one data set per figure).
 
@@ -1026,9 +1289,13 @@ class Chi2(jaml.YAMLWrapper):
         x_variable : str | list[str] | None, optional
             The kinematic variable to put on the x axis, by default "fallback". Plots a binned distribution if a list is passed.
         xlabel : str | dict[str, str] | Literal["fallback"] | None, optional
-            x label of the plot, by default None.
+            x label of the plot, by default "fallback". By passing a dictionary, also the subplot and curve labels can be set.
+        xunit : str | dict[str, str] | Literal["fallback"] | None, optional
+            x unit of the plot, by default "fallback". By passing a dictionary, also the units of the subplot and curve labels can be set.
         ylabel : str | Literal["fallback"] | None, optional
-            y label of the plot, by default None.
+            y label of the plot, by default "fallback".
+        yunit : str | Literal["fallback"] | None, optional
+            y unit of the plot, by default "fallback".
         xscale : str | None, optional
             x scale of the plot, by default no changing of x scale.
         yscale : str | None, optional
@@ -1039,7 +1306,7 @@ class Chi2(jaml.YAMLWrapper):
             If a legend annotating data & theory is shown, by default True.
         curve_label : Literal["annotate above", "annotate right", "ticks", "legend"] | None, optional
             Where the curve labels are shown, by default "ticks". If None, no labels are shown.
-        subplot_groupby: str | None, optional
+        subplot_groupby: str | list[str] | None, optional
             Variable to group the subplot axes by, by default None (no grouping).
         subplot_label : Literal["legend"] | None, optional  # FIXME
             Where to label the subplot, by default None.
@@ -1047,9 +1314,13 @@ class Chi2(jaml.YAMLWrapper):
             Format of the subplot label, by default None.
         chi2_annotation : bool, optional
             If the χ²/point value is annotated, by default True.
-        chi2_legend : LegendPos, optional
-            Where on the figure to show a legend with the χ², by default "upper left". If None, no χ² legend is shown.
-        info_legend: LegendPos, optional
+        chi2_legend_total : LegendPos, optional
+            Where on the figure to show a legend with the total χ² of the figure, by default "upper left". If None, no χ² legend is shown.
+        chi2_legend_subplots : bool, optional
+            If legends annotating the total χ² of the subplots are shown, by default False.
+        chi2_penalty_convention : Literal["even", "prop", "without"], optional
+            How to distribute the penalty between the points of one data set or one group with shared normalization, by default "prop". "even" means this penalty is evenly distributed between the respective points, "prop" means it is distributed proportional to the shifted χ² of the point, and "without" means the χ² without penalty is used.
+        info_legend : LegendPos, optional
             On which subplot to show a legend with info about the data set, by default "upper left". If None, no info legend is shown.
         curve_groupby : str | list[str] | Literal["fallback"] | None, optional
             Variable(s) to group the curves by, by default "fallback".
@@ -1083,8 +1354,10 @@ class Chi2(jaml.YAMLWrapper):
             Keyword arguments to pass to `plt.Axes.set_title`.
         kwargs_legend : dict[str, Any], optional
             Keyword arguments to pass to `AdditionalLegend` for annotating data & theory.
-        kwargs_legend_chi2 : dict[str, Any], optional
-            Keyword arguments to pass to `AdditionalLegend` for annotating the total χ².
+        kwargs_legend_chi2_total : dict[str, Any], optional
+            Keyword arguments to pass to `AdditionalLegend` for annotating the total χ² of the figure.
+        kwargs_legend_chi2_subplots: dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments to pass to `AdditionalLegend` for annotating the total χ² of the subplots.
         kwargs_legend_info : dict[str, Any], optional
             Keyword arguments to pass to `AdditionalLegend` for annotating data set info.
         kwargs_legend_curves : dict[str, Any], optional
@@ -1117,7 +1390,9 @@ class Chi2(jaml.YAMLWrapper):
         type_experiment: str | None = ...,
         x_variable: str | list[str] | Literal["fallback"] | None = ...,
         xlabel: str | dict[str, str] | Literal["fallback"] | None = ...,
+        xunit: str | dict[str, str] = ...,
         ylabel: str | Literal["fallback"] | None = ...,
+        yunit: str = ...,
         xscale: str | None = ...,
         yscale: str | None = ...,
         title: str | None = ...,
@@ -1132,11 +1407,13 @@ class Chi2(jaml.YAMLWrapper):
             | None
         ) = ...,
         plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = ...,
-        subplot_groupby: str | None = ...,
+        subplot_groupby: str | list[str] | None = ...,
         subplot_label: Literal["legend"] | None = ...,
         subplot_label_format: str | None = ...,
         chi2_annotation: bool = ...,
-        chi2_legend: LegendPos = ...,
+        chi2_legend_total: LegendPos = ...,
+        chi2_legend_subplots: bool = ...,
+        chi2_penalty_convention: Literal["even", "prop", "without"] = ...,
         info_legend: LegendPos = ...,
         curve_groupby: str | list[str] | Literal["fallback"] | None = ...,
         apply_normalization: bool = ...,
@@ -1154,7 +1431,8 @@ class Chi2(jaml.YAMLWrapper):
         kwargs_ylabel: dict[str, Any] = ...,
         kwargs_title: dict[str, Any] = ...,
         kwargs_legend: dict[str, Any] = ...,
-        kwargs_legend_chi2: dict[str, Any] = ...,
+        kwargs_legend_chi2_total: dict[str, Any] = ...,
+        kwargs_legend_chi2_subplots: dict[str, Any] | list[dict[str, Any] | None] = ...,
         kwargs_legend_info: dict[str, Any] = ...,
         kwargs_legend_curves: dict[str, Any] = ...,
         kwargs_legend_subplots: dict[str, Any] | list[dict[str, Any] | None] = ...,
@@ -1164,7 +1442,6 @@ class Chi2(jaml.YAMLWrapper):
         *,
         ax: None = ...,
         iterate: Literal[True],
-        **kwargs: Any,
     ) -> Iterator[AxesGrid]:
         """Plot data vs. theory (one data set per figure).
 
@@ -1177,9 +1454,13 @@ class Chi2(jaml.YAMLWrapper):
         x_variable : str | list[str] | None, optional
             The kinematic variable to put on the x axis, by default "fallback". Plots a binned distribution if a list is passed.
         xlabel : str | dict[str, str] | Literal["fallback"] | None, optional
-            x label of the plot, by default None.
+            x label of the plot, by default "fallback". By passing a dictionary, also the subplot and curve labels can be set.
+        xunit : str | dict[str, str] | Literal["fallback"] | None, optional
+            x unit of the plot, by default "fallback". By passing a dictionary, also the units of the subplot and curve labels can be set.
         ylabel : str | Literal["fallback"] | None, optional
-            y label of the plot, by default None.
+            y label of the plot, by default "fallback".
+        yunit : str | Literal["fallback"] | None, optional
+            y unit of the plot, by default "fallback".
         xscale : str | None, optional
             x scale of the plot, by default no changing of x scale.
         yscale : str | None, optional
@@ -1192,7 +1473,7 @@ class Chi2(jaml.YAMLWrapper):
             Where the curve labels are shown, by default "ticks". If None, no labels are shown.
         plot_types : DataVsTheoryType | Sequence[DataVsTheoryType], optional
             Types of the plots, by default "absolute". "absolute" plots the observable of the data set, "data over theory" plots the data over theory ratio, and vice versa for "theory over data". If a sequence is passed, each plot type becomes a subplot in the vertical direction.
-        subplot_groupby: str | None, optional
+        subplot_groupby: str | list[str] | None, optional
             Variable to group the subplot axes by, by default None (no grouping).
         subplot_label : Literal["legend"] | None, optional  # FIXME
             Where to label the subplot, by default None.
@@ -1200,9 +1481,13 @@ class Chi2(jaml.YAMLWrapper):
             Format of the subplot label, by default None.
         chi2_annotation : bool, optional
             If the χ²/point value is annotated, by default True.
-        chi2_legend : LegendPos, optional
-            Where on the figure to show a legend with the χ², by default "upper left". If None, no χ² legend is shown.
-        info_legend: LegendPos, optional
+        chi2_legend_total : LegendPos, optional
+            Where on the figure to show a legend with the total χ² of the figure, by default "upper left". If None, no χ² legend is shown.
+        chi2_legend_subplots : bool, optional
+            If legends annotating the total χ² of the subplots are shown, by default False.
+        chi2_penalty_convention : Literal["even", "prop", "without"], optional
+            How to distribute the penalty between the points of one data set or one group with shared normalization, by default "prop". "even" means this penalty is evenly distributed between the respective points, "prop" means it is distributed proportional to the shifted χ² of the point, and "without" means the χ² without penalty is used.
+        info_legend : LegendPos, optional
             On which subplot to show a legend with info about the data set, by default "upper left". If None, no info legend is shown.
         curve_groupby : str | list[str] | Literal["fallback"] | None, optional
             Variable(s) to group the curves by, by default "fallback".
@@ -1236,8 +1521,10 @@ class Chi2(jaml.YAMLWrapper):
             Keyword arguments to pass to `plt.Axes.set_title`.
         kwargs_legend : dict[str, Any], optional
             Keyword arguments to pass to `AdditionalLegend` for annotating data & theory.
-        kwargs_legend_chi2 : dict[str, Any], optional
-            Keyword arguments to pass to `AdditionalLegend` for annotating the total χ².
+        kwargs_legend_chi2_total : dict[str, Any], optional
+            Keyword arguments to pass to `AdditionalLegend` for annotating the total χ² of the figure.
+        kwargs_legend_chi2_subplots: dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments to pass to `AdditionalLegend` for annotating the total χ² of the subplots.
         kwargs_legend_info : dict[str, Any], optional
             Keyword arguments to pass to `AdditionalLegend` for annotating data set info.
         kwargs_legend_subplots : dict[str, Any] | list[dict[str, Any] | None], optional
@@ -1268,7 +1555,9 @@ class Chi2(jaml.YAMLWrapper):
         type_experiment: str | None = ...,
         x_variable: str | list[str] | Literal["fallback"] | None = ...,
         xlabel: str | dict[str, str] | Literal["fallback"] | None = ...,
+        xunit: str | dict[str, str] = ...,
         ylabel: str | Literal["fallback"] | None = ...,
+        yunit: str = ...,
         xscale: str | None = ...,
         yscale: str | None = ...,
         title: str | None = ...,
@@ -1283,11 +1572,13 @@ class Chi2(jaml.YAMLWrapper):
             | None
         ) = ...,
         plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = ...,
-        subplot_groupby: str | None = ...,
+        subplot_groupby: str | list[str] | None = ...,
         subplot_label: Literal["legend"] | None = ...,
         subplot_label_format: str | None = ...,
         chi2_annotation: bool = ...,
-        chi2_legend: LegendPos = ...,
+        chi2_legend_total: LegendPos = ...,
+        chi2_legend_subplots: bool = ...,
+        chi2_penalty_convention: Literal["even", "prop", "without"] = ...,
         info_legend: LegendPos = ...,
         curve_groupby: str | list[str] | Literal["fallback"] | None = ...,
         apply_normalization: bool = ...,
@@ -1305,7 +1596,8 @@ class Chi2(jaml.YAMLWrapper):
         kwargs_ylabel: dict[str, Any] = ...,
         kwargs_title: dict[str, Any] = ...,
         kwargs_legend: dict[str, Any] = ...,
-        kwargs_legend_chi2: dict[str, Any] = ...,
+        kwargs_legend_chi2_total: dict[str, Any] = ...,
+        kwargs_legend_chi2_subplots: dict[str, Any] | list[dict[str, Any] | None] = ...,
         kwargs_legend_info: dict[str, Any] = ...,
         kwargs_legend_curves: dict[str, Any] = ...,
         kwargs_legend_subplots: dict[str, Any] | list[dict[str, Any] | None] = ...,
@@ -1315,7 +1607,6 @@ class Chi2(jaml.YAMLWrapper):
         *,
         ax: plt.Axes | Sequence[plt.Axes],
         iterate: bool = ...,
-        **kwargs: Any,
     ) -> None:
         """Plot data vs. theory (one data set per figure).
 
@@ -1328,9 +1619,13 @@ class Chi2(jaml.YAMLWrapper):
         x_variable : str | list[str] | None, optional
             The kinematic variable to put on the x axis, by default "fallback". Plots a binned distribution if a list is passed.
         xlabel : str | dict[str, str] | Literal["fallback"] | None, optional
-            x label of the plot, by default None.
+            x label of the plot, by default "fallback". By passing a dictionary, also the subplot and curve labels can be set.
+        xunit : str | dict[str, str] | Literal["fallback"] | None, optional
+            x unit of the plot, by default "fallback". By passing a dictionary, also the units of the subplot and curve labels can be set.
         ylabel : str | Literal["fallback"] | None, optional
-            y label of the plot, by default None.
+            y label of the plot, by default "fallback".
+        yunit : str | Literal["fallback"] | None, optional
+            y unit of the plot, by default "fallback".
         xscale : str | None, optional
             x scale of the plot, by default no changing of x scale.
         yscale : str | None, optional
@@ -1345,17 +1640,21 @@ class Chi2(jaml.YAMLWrapper):
             Types of the plots, by default "absolute". "absolute" plots the observable of the data set, "data over theory" plots the data over theory ratio, and vice versa for "theory over data". If a sequence is passed, each plot type becomes a subplot in the vertical direction.
         ax: plt.Axes | Sequence[plt.Axes] | None, optional
             Axes to plot on, by default None. If None, an AxesGrid is created and returned. If not None, the subplots are filled row-wise w.r.t. the AxesGrid that would have been created, with each plot type being filled before moving on to the next subplot.
-        subplot_groupby: str | None, optional
-            Variable to group the subplot axes by, by default None (no grouping).
+        subplot_groupby: str | list[str] | None, optional
+            Variable(s) to group the subplot axes by, by default None (no grouping).
         subplot_label : Literal["legend"] | None, optional  # FIXME
             Where to label the subplot, by default None.
         subplot_label_format : str | None, optional
             Format of the subplot label, by default None.
         chi2_annotation : bool, optional
             If the χ²/point value is annotated, by default True.
-        chi2_legend : LegendPos, optional
-            Where on the figure to show a legend with the χ², by default "upper left". If None, no χ² legend is shown.
-        info_legend: LegendPos, optional
+        chi2_legend_total : LegendPos, optional
+            Where on the figure to show a legend with the total χ² of the figure, by default "upper left". If None, no χ² legend is shown.
+        chi2_legend_subplots : bool, optional
+            If legends annotating the total χ² of the subplots are shown, by default False.
+        chi2_penalty_convention : Literal["even", "prop", "without"], optional
+            How to distribute the penalty between the points of one data set or one group with shared normalization, by default "prop". "even" means this penalty is evenly distributed between the respective points, "prop" means it is distributed proportional to the shifted χ² of the point, and "without" means the χ² without penalty is used.
+        info_legend : LegendPos, optional
             On which subplot to show a legend with info about the data set, by default "upper left". If None, no info legend is shown.
         curve_groupby : str | list[str] | Literal["fallback"] | None, optional
             Variable(s) to group the curves by, by default "fallback".
@@ -1389,8 +1688,10 @@ class Chi2(jaml.YAMLWrapper):
             Keyword arguments to pass to `plt.Axes.set_title`.
         kwargs_legend : dict[str, Any], optional
             Keyword arguments to pass to `AdditionalLegend` for annotating data & theory.
-        kwargs_legend_chi2 : dict[str, Any], optional
-            Keyword arguments to pass to `AdditionalLegend` for annotating the total χ².
+        kwargs_legend_chi2_total : dict[str, Any], optional
+            Keyword arguments to pass to `AdditionalLegend` for annotating the total χ² of the figure.
+        kwargs_legend_chi2_subplots: dict[str, Any] | list[dict[str, Any] | None], optional
+            Keyword arguments to pass to `AdditionalLegend` for annotating the total χ² of the subplots.
         kwargs_legend_info : dict[str, Any], optional
             Keyword arguments to pass to `AdditionalLegend` for annotating data set info.
         kwargs_legend_subplots : dict[str, Any] | list[dict[str, Any] | None], optional
@@ -1415,7 +1716,9 @@ class Chi2(jaml.YAMLWrapper):
         type_experiment: str | None = None,
         x_variable: str | list[str] | Literal["fallback"] | None = "fallback",
         xlabel: str | dict[str, str] | Literal["fallback"] | None = "fallback",
+        xunit: str | dict[str, str] = "fallback",
         ylabel: str | Literal["fallback"] | None = "fallback",
+        yunit: str = "fallback",
         xscale: str | None = None,
         yscale: str | None = None,
         title: str | None = None,
@@ -1430,11 +1733,13 @@ class Chi2(jaml.YAMLWrapper):
             | None
         ) = "ticks",
         plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = ["absolute"],
-        subplot_groupby: str | None = None,
+        subplot_groupby: str | list[str] | None = None,
         subplot_label: Literal["legend"] | None = None,
         subplot_label_format: str | None = None,
         chi2_annotation: bool = True,
-        chi2_legend: LegendPos = "upper left",
+        chi2_legend_total: LegendPos = "upper left",
+        chi2_legend_subplots: bool = False,
+        chi2_penalty_convention: Literal["even", "prop", "without"] = "prop",
         info_legend: LegendPos = "upper left",
         curve_groupby: str | list[str] | Literal["fallback"] | None = "fallback",
         apply_normalization: bool = True,
@@ -1452,7 +1757,8 @@ class Chi2(jaml.YAMLWrapper):
         kwargs_ylabel: dict[str, Any] = {},
         kwargs_title: dict[str, Any] = {},
         kwargs_legend: dict[str, Any] = {},
-        kwargs_legend_chi2: dict[str, Any] = {},
+        kwargs_legend_chi2_total: dict[str, Any] = {},
+        kwargs_legend_chi2_subplots: dict[str, Any] | list[dict[str, Any] | None] = {},
         kwargs_legend_info: dict[str, Any] = {},
         kwargs_legend_curves: dict[str, Any] = {},
         kwargs_legend_subplots: dict[str, Any] | list[dict[str, Any] | None] = {},
@@ -1462,14 +1768,15 @@ class Chi2(jaml.YAMLWrapper):
         *,
         ax: plt.Axes | Sequence[plt.Axes] | None = None,
         iterate: bool = False,
-        **kwargs: Any,
     ) -> AxesGrid | list[AxesGrid] | Iterator[AxesGrid] | None:
         res_iter = self._plot_data_vs_theory(
             id_dataset=id_dataset,
             type_experiment=type_experiment,
             x_variable=x_variable,
             xlabel=xlabel,
+            xunit=xunit,
             ylabel=ylabel,
+            yunit=yunit,
             xscale=xscale,
             yscale=yscale,
             title=title,
@@ -1481,7 +1788,9 @@ class Chi2(jaml.YAMLWrapper):
             subplot_label=subplot_label,
             subplot_label_format=subplot_label_format,
             chi2_annotation=chi2_annotation,
-            chi2_legend=chi2_legend,
+            chi2_legend_total=chi2_legend_total,
+            chi2_legend_subplots=chi2_legend_subplots,
+            chi2_penalty_convention=chi2_penalty_convention,
             info_legend=info_legend,
             curve_groupby=curve_groupby,
             apply_normalization=apply_normalization,
@@ -1499,14 +1808,14 @@ class Chi2(jaml.YAMLWrapper):
             kwargs_ylabel=kwargs_ylabel,
             kwargs_title=kwargs_title,
             kwargs_legend=kwargs_legend,
-            kwargs_legend_chi2=kwargs_legend_chi2,
+            kwargs_legend_chi2_total=kwargs_legend_chi2_total,
+            kwargs_legend_chi2_subplots=kwargs_legend_chi2_subplots,
             kwargs_legend_info=kwargs_legend_info,
             kwargs_legend_curves=kwargs_legend_curves,
             kwargs_legend_subplots=kwargs_legend_subplots,
             kwargs_ticks_curves=kwargs_ticks_curves,
             kwargs_annotate_chi2=kwargs_annotate_chi2,
             kwargs_annotate_curves=kwargs_annotate_curves,
-            **kwargs,
         )
 
         if ax is not None:
@@ -1529,7 +1838,9 @@ class Chi2(jaml.YAMLWrapper):
         type_experiment: str | None = None,
         x_variable: str | list[str] | Literal["fallback"] | None = "fallback",
         xlabel: str | dict[str, str] | Literal["fallback"] | None = "fallback",
+        xunit: str | dict[str, str] | Literal["fallback"] | None = "fallback",
         ylabel: str | Literal["fallback"] | None = "fallback",
+        yunit: str | Literal["fallback"] | None = "fallback",
         xscale: str | None = None,
         yscale: str | None = None,
         title: str | None = None,
@@ -1545,11 +1856,13 @@ class Chi2(jaml.YAMLWrapper):
         ) = "ticks",
         plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = ["absolute"],
         ax: plt.Axes | Sequence[plt.Axes] | None = None,
-        subplot_groupby: str | None = None,
+        subplot_groupby: str | list[str] | None = None,
         subplot_label: Literal["legend"] | None = None,
         subplot_label_format: str | None = None,
         chi2_annotation: bool = True,
-        chi2_legend: LegendPos = "upper left",
+        chi2_legend_total: LegendPos = "upper left",
+        chi2_legend_subplots: bool = False,
+        chi2_penalty_convention: Literal["even", "prop", "without"] = "prop",
         info_legend: LegendPos = "upper left",
         curve_groupby: str | list[str] | Literal["fallback"] | None = "fallback",
         apply_normalization: bool = True,
@@ -1567,14 +1880,14 @@ class Chi2(jaml.YAMLWrapper):
         kwargs_ylabel: dict[str, Any] = {},
         kwargs_title: dict[str, Any] = {},
         kwargs_legend: dict[str, Any] = {},
-        kwargs_legend_chi2: dict[str, Any] = {},
+        kwargs_legend_chi2_total: dict[str, Any] = {},
+        kwargs_legend_chi2_subplots: dict[str, Any] | list[dict[str, Any] | None] = {},
         kwargs_legend_info: dict[str, Any] = {},
         kwargs_legend_curves: dict[str, Any] = {},
         kwargs_legend_subplots: dict[str, Any] | list[dict[str, Any] | None] = {},
         kwargs_ticks_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
         kwargs_annotate_chi2: dict[str, Any] = {},
         kwargs_annotate_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
-        **kwargs: Any,
     ) -> Iterator[AxesGrid]:
 
         # bring id_dataset in Sequence[int] form (either directly from id_dataset or indirectly from collecting all IDs belonging to type_experiment)
@@ -1655,31 +1968,43 @@ class Chi2(jaml.YAMLWrapper):
                 ax_grid = None
                 ax_i = ax[i * n_real : (i + 1) * n_real]
 
-            if chi2_legend is not None:
+            if chi2_legend_total is not None:
                 ax_legend_chi2 = (
-                    ax_grid.locate_ax(chi2_legend) if ax_grid is not None else ax_i[0]
+                    ax_grid.locate_ax(chi2_legend_total)
+                    if ax_grid is not None
+                    else ax_i[0]
                 )
 
-                kwargs_legend_chi2_default = {
+                chi2_col = data_vs_theory._get_chi2_col(
+                    shift_correlated=shift_correlated is not None,
+                    chi2_penalty_convention=chi2_penalty_convention,
+                )
+
+                # cannot use self.minimum_value_per_data for the chi2 without penalty since it includes the penalty for correlated systematic uncertainties
+                chi2_data_i = self.minimum_points[
+                    self.minimum_points["id_dataset"] == id_dataset_i
+                ][chi2_col].sum()
+
+                kwargs_legend_chi2_total_default = {
                     "order": 0,
                     "parent": ax_legend_chi2,
                     "handles": [Patch(), Patch(), Patch()],
                     "labels": [
                         f"$N_{{\\text{{data}}}} = {self.num_points[id_dataset_i]}$",
-                        f"$\\chi^2_{{\\text{{total}}}} = {self.minimum_value_per_data[id_dataset_i]:.3f}$",
-                        f"$\\chi^2_{{\\text{{total}}}}\\,/\\, N_{{\\text{{data}}}} = {self.minimum_value_per_data[id_dataset_i] / self.num_points[id_dataset_i]:.3f}$",
+                        f"$\\chi^2_{{\\text{{total}}}} = {chi2_data_i:.3f}$",
+                        f"$\\chi^2_{{\\text{{total}}}}\\,/\\, N_{{\\text{{data}}}} = {chi2_data_i / self.num_points[id_dataset_i]:.3f}$",
                     ],
                     "labelspacing": 0,
                     "handlelength": 0,
                     "handleheight": 0,
                     "handletextpad": 0,
                 }
-                kwargs_legend_chi2_updated = util.update_kwargs(
-                    kwargs_legend_chi2_default, kwargs_legend_chi2
+                kwargs_legend_chi2_total_updated = util.update_kwargs(
+                    kwargs_legend_chi2_total_default, kwargs_legend_chi2_total
                 )
 
                 ax_legend_chi2.add_artist(
-                    AdditionalLegend(**kwargs_legend_chi2_updated)
+                    AdditionalLegend(**kwargs_legend_chi2_total_updated)
                 )
 
             if info_legend is not None:
@@ -1692,8 +2017,14 @@ class Chi2(jaml.YAMLWrapper):
                 ].iloc[0]
                 labels_info_legend = [
                     f"{labels_info['experiment']} (ID {labels_info["id_dataset"]})",
-                    f"${labels.reaction_to_latex(labels_info["reaction"])}$",
                 ]
+                if (
+                    not pd.isna(labels_info["reaction"])
+                    and len(labels_info["reaction"]) > 0
+                ):
+                    labels_info_legend.append(
+                        f"${labels.reaction_to_latex(labels_info["reaction"])}$"
+                    )
 
                 kwargs_legend_info_default = {
                     "order": -1,
@@ -1734,22 +2065,71 @@ class Chi2(jaml.YAMLWrapper):
                     self.datasets.labels_y.loc[data_ij["id_dataset"]].iloc[0].dropna()
                 )
 
-                if xlabel == "fallback" and labels_x.size > 0:
+                if xlabel == "fallback":
+                    xlabel_updated = {}
+                elif isinstance(xlabel, str):
+                    if x_variable is None or x_variable == "fallback":
+                        xlabel_updated = {"fallback": xlabel}
+                    else:
+                        xlabel_updated = {
+                            data_vs_theory._get_kinematic_variable(x_variable): xlabel
+                        }
+                elif xlabel is None:
+                    if x_variable is None or x_variable == "fallback":
+                        xlabel_updated = {"fallback": ""}
+                    else:
+                        xlabel_updated = {
+                            data_vs_theory._get_kinematic_variable(x_variable): ""
+                        }
+                else:
+                    xlabel_updated = xlabel
+
+                if xunit == "fallback":
+                    xunit_updated = {}
+                elif isinstance(xunit, str):
+                    if x_variable is None or x_variable == "fallback":
+                        xunit_updated = {"fallback": xunit}
+                    else:
+                        xunit_updated = {
+                            data_vs_theory._get_kinematic_variable(x_variable): xunit
+                        }
+                elif xunit is None:
+                    if x_variable is None or x_variable == "fallback":
+                        xunit_updated = {"fallback": ""}
+                    else:
+                        xunit_updated = {
+                            data_vs_theory._get_kinematic_variable(x_variable): ""
+                        }
+                else:
+                    xunit_updated = xunit
+
+                if labels_x.size > 0:
                     xlabel_updated = {
                         str(k): str(s["LabelX"].iloc[0]).replace("\\frac", "\\dfrac")
                         for k, s in labels_x.groupby(level=1)
-                    }
-                    xunit = {
+                    } | xlabel_updated
+
+                    xunit_updated = {
                         str(k): (
                             str(u).replace("\\frac", "\\dfrac")
                             if (u := s["UnitX"].iloc[0]) != 1.0
                             else ""
                         )
                         for k, s in labels_x.groupby(level=1)
-                    }
-                else:
-                    xlabel_updated = xlabel
-                    xunit = ""
+                    } | xunit_updated
+
+                for v in subplot_groupby, curve_groupby:
+                    if isinstance(v, list):
+                        for v_i in v:
+                            if v_i not in xlabel_updated:
+                                xlabel_updated[v_i] = v_i
+                            if v_i not in xunit_updated:
+                                xunit_updated[v_i] = ""
+                    elif isinstance(v, str):
+                        if v not in xlabel_updated and v != "fallback":
+                            xlabel_updated[v] = v
+                        if v not in xunit_updated and v != "fallback":
+                            xunit_updated[v] = ""
 
                 if ylabel == "fallback" and labels_y.size > 0:
                     ylabel_updated = str(labels_y["LabelY"]).replace(
@@ -1776,7 +2156,7 @@ class Chi2(jaml.YAMLWrapper):
                     points=data_ij,
                     x_variable=x_variable,
                     xlabel=xlabel_updated,
-                    xunit=xunit,
+                    xunit=xunit_updated,
                     ylabel=ylabel_updated,
                     yunit=yunit,
                     xscale=xscale,
@@ -1788,7 +2168,8 @@ class Chi2(jaml.YAMLWrapper):
                     # subplot_label=subplot_label,
                     subplot_label_format=subplot_label_format,
                     chi2_annotation=chi2_annotation,
-                    chi2_legend=False,
+                    chi2_legend=chi2_legend_subplots,
+                    chi2_penalty_convention=chi2_penalty_convention,
                     curve_groupby=curve_groupby,
                     apply_normalization=apply_normalization,
                     shift_correlated=shift_correlated,
@@ -1804,7 +2185,7 @@ class Chi2(jaml.YAMLWrapper):
                     kwargs_ylabel=kwargs_ylabel,
                     kwargs_title=kwargs_title,
                     kwargs_legend=kwargs_legend,
-                    kwargs_legend_chi2=kwargs_legend_chi2,
+                    kwargs_legend_chi2=util.get_kwargs(kwargs_legend_chi2_subplots, j),
                     kwargs_legend_curves=kwargs_legend_curves,
                     kwargs_ticks_curves=kwargs_ticks_curves,
                     kwargs_annotate_chi2=kwargs_annotate_chi2,
@@ -1817,7 +2198,7 @@ class Chi2(jaml.YAMLWrapper):
                         subplot_groupby,
                         ax_gb_val_j,  # pyright: ignore[reportArgumentType]
                         variables_labels=xlabel_updated,
-                        variables_units=xunit,
+                        variables_units=xunit_updated,
                     )
 
                     kwargs_legend_subplots_default = dict(
