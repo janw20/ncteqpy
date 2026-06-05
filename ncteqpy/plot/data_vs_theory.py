@@ -54,6 +54,7 @@ def plot(
     subplot_label_format: str | None = None,
     chi2_annotation: bool = True,
     chi2_legend: bool = True,
+    chi2_penalty_convention: Literal["even", "prop", "without"] = "prop",
     curve_groupby: str | list[str] | Literal["fallback"] | None = "fallback",
     apply_normalization: bool = True,
     shift_correlated: Literal["data", "theory"] | None = "theory",
@@ -246,6 +247,12 @@ def plot(
     if y_offset_mul is None:
         y_offset_mul = 0
 
+    if isinstance(xlabel, dict) and "fallback" in xlabel:
+        xlabel[_get_kinematic_variable(x_variable)] = xlabel["fallback"]
+
+    if isinstance(xunit, dict) and "fallback" in xunit:
+        xunit[_get_kinematic_variable(x_variable)] = xunit["fallback"]
+
     plot_common(
         ax=ax,
         points=points,
@@ -264,6 +271,7 @@ def plot(
         subplot_label_format=subplot_label_format,
         chi2_annotation=chi2_annotation,
         chi2_legend=chi2_legend,
+        chi2_penalty_convention=chi2_penalty_convention,
         curve_groupby=curve_groupby,
         apply_normalization=apply_normalization,
         shift_correlated=shift_correlated,
@@ -322,6 +330,7 @@ def plot_common(
     subplot_label_format: str | None = None,
     chi2_annotation: bool = True,
     chi2_legend: bool = True,
+    chi2_penalty_convention: Literal["even", "prop", "without"] = "prop",
     curve_groupby: str | list[str] | None = None,
     apply_normalization: bool = True,
     shift_correlated: Literal["data", "theory"] | None = "theory",
@@ -511,6 +520,7 @@ def plot_common(
                 points=points_i,
                 x_col=x_variable,
                 y_col=theory_column,
+                chi2_penalty_convention=chi2_penalty_convention,
                 index_curve=i,
                 y_offset_add=y_offset_add,
                 y_offset_mul=y_offset_mul,
@@ -578,7 +588,12 @@ def plot_common(
 
     if chi2_legend and "chi2" in points:
         _add_chi2_legend(
-            order=0, ax=ax[0], points=points, kwargs_legend_chi2=kwargs_legend_chi2
+            order=0,
+            ax=ax[0],
+            points=points,
+            shift_correlated=shift_correlated is not None,
+            chi2_penalty_convention=chi2_penalty_convention,
+            kwargs_legend_chi2=kwargs_legend_chi2,
         )
 
     if subplot_label == "legend":
@@ -856,7 +871,11 @@ def _plot_theory(
 
             # for nan values in points[y_col] we fall back to "theory"
             points_theory = (
-                points[y_col].fillna(points["theory"], inplace=False).to_numpy()
+                points[y_col]
+                .fillna(
+                    (points["theory"] if "theory" in points else np.nan), inplace=False
+                )
+                .to_numpy()
             )
 
             if shift_correlated and "shift_correlated" in points:
@@ -1015,6 +1034,7 @@ def _annotate_chi2(
     points: pd.DataFrame,
     x_col: str | list[str],
     y_col: str = "theory",
+    chi2_penalty_convention: Literal["even", "prop", "without"] = "prop",
     index_curve: int = 0,
     y_offset_add: float | Sequence[float] = 0,
     y_offset_mul: float | Sequence[float] = 0,
@@ -1032,16 +1052,14 @@ def _annotate_chi2(
 
     positions = []
 
-    if shift_correlated:
-        if "chi2_shifted" in points:
-            chi2_col = "chi2_shifted"
-        else:
-            # logging.warning(
-            #     "shift_correlated is True, but 'chi2_shifted' not in points"
-            # )
-            chi2_col = "chi2"
-    else:
-        chi2_col = "chi2"
+    # print(points.columns)
+
+    chi2_col = _get_chi2_col(
+        shift_correlated=shift_correlated,
+        chi2_penalty_convention=chi2_penalty_convention,
+    )
+
+    # print(chi2_col)
 
     kwargs_annotate_default = {
         "xytext": (0, 0.3),
@@ -1286,9 +1304,6 @@ def _format_curve_label(
     if len(values) != len(variables):
         raise ValueError("Please pass as many values as variables")
 
-    if len(variables_units) != len(variables):
-        raise ValueError("Please pass as many units as variables")
-
     if isinstance(variables_labels, list) and len(variables_labels) != len(variables):
         raise ValueError("Please pass as many labels as variables")
 
@@ -1330,7 +1345,7 @@ def _format_curve_label(
             else nc_labels.kinvars_py_to_tex[variable]
         )
 
-        variable_unit = variables_units[i]
+        variable_unit = variables_units[i] if i < len(variables_units) else None
         variable_unit_label = (
             f"\\,{variable_unit}"
             if variable_unit is not None and variable_unit != ""
@@ -1406,7 +1421,7 @@ def _set_labels(
         if isinstance(x_unit, dict):
             x_unit = x_unit[_get_kinematic_variable(x_variable)]
 
-        if x_unit != "":
+        if x_label != "" and x_unit != "":
             x_label += f"\\;\\left[{x_unit}\\right]"
 
         if x_label != "":
@@ -1446,16 +1461,24 @@ def _add_chi2_legend(
     order: int,
     ax: plt.Axes,
     points: pd.DataFrame,
+    shift_correlated: bool = True,
+    chi2_penalty_convention: Literal["even", "prop", "without"] = "prop",
     kwargs_legend_chi2: dict[str, Any] = {},
 ) -> AdditionalLegend:
+
+    chi2_col = _get_chi2_col(
+        shift_correlated=shift_correlated,
+        chi2_penalty_convention=chi2_penalty_convention,
+    )
+
     kwargs_default = {
         "order": order,
         "parent": ax,
         "handles": [Patch(), Patch(), Patch()],
         "labels": [
             f"$N_{{\\text{{data}}}} = {len(points)}$",
-            f"$\\chi^2_{{\\text{{total}}}} = {points['chi2'].sum():.3f}$",
-            f"$\\chi^2_{{\\text{{total}}}}\\,/\\, N_{{\\text{{data}}}} = {points['chi2'].sum() / len(points):.3f}$",
+            f"$\\chi^2_{{\\text{{total}}}} = {points[chi2_col].sum():.3f}$",
+            f"$\\chi^2_{{\\text{{total}}}}\\,/\\, N_{{\\text{{data}}}} = {points[chi2_col].sum() / len(points):.3f}$",
         ],
         "labelspacing": 0,
         "handlelength": 0,
@@ -1468,3 +1491,15 @@ def _add_chi2_legend(
     ax.add_artist(legend)
 
     return legend
+
+
+def _get_chi2_col(
+    shift_correlated: bool, chi2_penalty_convention: Literal["even", "prop", "without"]
+) -> str:
+    if shift_correlated:
+        if chi2_penalty_convention == "without":
+            return "chi2_shifted"
+        else:
+            return f"chi2_shifted_with_{chi2_penalty_convention}_penalty"
+    else:
+        return "chi2"
