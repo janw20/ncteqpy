@@ -392,7 +392,8 @@ class Datasets(jaml.YAMLWrapper):
         )
         points_yaml = self._load_yaml(points_pattern)
 
-        assert isinstance(points_yaml, list)
+        if not isinstance(points_yaml, list):
+            points_yaml = [(self.paths[0], points_yaml)]
 
         info: dict[str, Path | jaml.YAMLType] = {
             "id_dataset": None,
