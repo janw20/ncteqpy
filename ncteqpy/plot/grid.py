@@ -256,7 +256,7 @@ class AxesGrid:
             for i, j in self.indices_none:
                 self._ax_all[i, j].set_visible(False)
 
-            if self.n_none > 0:
+            if sharex and self.n_none > 0:
                 for ax_i in self.ax_bottom:
                     ax_i: plt.Axes
                     ax_i.tick_params("x", which="both", labelbottom=True)
