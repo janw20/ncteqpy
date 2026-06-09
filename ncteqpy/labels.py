@@ -22,11 +22,14 @@ chi2fcn_per_point_breakdown_yaml_to_py = {
 
 kinvars_yaml_to_py = {
     "BIN": "id_bin",
+    "BINRATIO": "binratio",
     "RS": "sqrt_s",
     "X": "x",
     "Y": "y",
     "Q2": "Q2",
     "W2": "W2",
+    "MLLMIN": "m_ll_min",
+    "MLLMAX": "m_ll_max",
     "EHAD": "E_had",
     "EPS": "eps",
     "PT": "pT",
@@ -69,12 +72,17 @@ kinvars_py_to_tex = {
 theory_yaml_to_py = {
     "SIG": "sigma",
     "RSIG": "ratio_sigma",
+    "SIGR": "ratio_sigma", 
     "SIGIPT": "sigma_pT_integrated",
     "F2": "F2",
     "RF2": "ratio_F2",
     "RF2ISO": "ratio_F2_iso",
     "APPLGRID": "applgrid",
     "RAPPLGRID": "rapplgrid",
+    "APPLGRIDSUM": "applgridsum",
+    "FKTABLE": "fktable",
+    "RFKTABLE": "rfktable",
+    "PINEAPPL": "pineappl",
     "CMS_RSIG_RATIO": "cms_ratio_sigma_double",
     "CMS_RSIG_ETA": "cms_ratio_sigma_eta",
 }

@@ -5,6 +5,8 @@ from itertools import cycle
 import matplotlib.pyplot as plt
 import matplotlib.text as mtext
 import matplotlib.transforms as mtransforms
+from matplotlib.colors import Normalize
+from matplotlib.colors import Colormap
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
@@ -24,6 +26,13 @@ def plot_kinematic_coverage(
     cuts: list[tuple[float | sp.Rel | sp.Expr, npt.NDArray[np.floating]]] | None = None,
     cuts_labels: list[tuple[float, str] | None] | None = None,
     cuts_labels_offset: float | list[float | None] | None = None,
+    color_by: pd.Series[float] | None = None,
+    color_cmap: Colormap | None = None,
+    color_norm: Normalize | None = None, 
+    colorbar: bool = True,
+    legend: bool = True,
+    kwargs_colorbar: dict[str, Any] | None = None,
+    kwargs_legend: dict[str, Any] ={},
     kwargs_points: dict[str, Any] | list[dict[str, Any] | None] | None = None,
     kwargs_points_before_cuts: (
         dict[str, Any] | list[dict[str, Any] | None] | None
@@ -55,6 +64,20 @@ def plot_kinematic_coverage(
         Labels to annotate the cuts by, by default None. These must be in the same ordering as `cuts`.
     cuts_labels_offset : float | list[float  |  None] | None, optional
         Offset in units of font size to shift the label orthogonally away from the curve representing a cut, by default None. Must be in the same order as `cuts` and `cuts_labels`.
+    color_by : pd.Series[float] | None, optional
+        Series of points or datasets to color by, by default None. If the index of the Series is "id_point", the points will be colored individually, if the index is "id_dataset", the points will be colored by dataset.
+    color_cmap : Colormap | None, optional
+        Colormap to use if `color_by` is given, by default None
+    color_norm : Normalize | None, optional
+        Normalization to use if `color_by` is given, by default None
+    colorbar : bool, optional
+        Whether to display a colorbar if `color_by` is given, by default True
+    legend : bool, optional
+        Whether to display a legend, by default True. Note that if `color_by` is given, the legend will only show the groups
+    kwargs_colorbar : dict[str, Any] | None, optional
+        Keyword arguments to adjust plotting the colorbar, passed to `ax.figure.colorbar`, by default None.
+    kwargs_legend : dict[str, Any], optional
+        Keyword arguments to adjust plotting the legend, passed to `ax.legend`, by default {}.
     kwargs_points : dict[str, Any] | list[dict[str, Any] | None] | None, optional
         Keyword arguments to adjust plotting the points, passed to `ax.plot`, by default None.
     kwargs_points_before_cuts : dict[str, Any] | list[dict[str, Any] | None] | None, optional
@@ -70,20 +93,26 @@ def plot_kinematic_coverage(
     grouper = groupby.grouper if groupby is not None else "id_dataset"
     sort_key = groupby.sort_key if groupby is not None else None
 
-    points_gb = (
-        points.set_index("id_dataset")
-        .sort_index(key=sort_key)  # pyright: ignore[reportArgumentType]
-        .groupby(grouper, sort=False, dropna=False)
-    )
-    points_before_cuts_gb = (
-        (
-            points_before_cuts.set_index("id_dataset")
+    if isinstance(color_by, pd.Series) and color_by.index.name=="id_point":
+        points["id_point"]=points.index
+        points_gb = points.set_index("id_point").groupby(lambda _: "all")
+        points_before_cuts["id_point"]=points_before_cuts.index
+        points_before_cuts_gb = points_before_cuts.set_index("id_point").groupby(lambda _: "all")
+    else:
+        points_gb = (
+            points.set_index("id_dataset")
             .sort_index(key=sort_key)  # pyright: ignore[reportArgumentType]
             .groupby(grouper, sort=False, dropna=False)
         )
-        if points_before_cuts is not None
-        else None
-    )
+        points_before_cuts_gb = (
+            (
+                points_before_cuts.set_index("id_dataset")
+                .sort_index(key=sort_key)  # pyright: ignore[reportArgumentType]
+                .groupby(grouper, sort=False, dropna=False)
+            )
+            if points_before_cuts is not None
+            else None
+        )
 
     for i, (label_i, p_i) in enumerate(points_gb):
         marker = next(markers)
@@ -94,7 +123,7 @@ def plot_kinematic_coverage(
         ):
             kwargs_default = {
                 "marker": marker,
-                "markersize": 3,
+                "s": 3,
                 "ls": "",
             }
             if groupby is not None:
@@ -114,7 +143,7 @@ def plot_kinematic_coverage(
 
             points_before_cuts_i = points_before_cuts_gb.get_group(label_i)
 
-            ax.plot(
+            ax.scatter(
                 points_before_cuts_i[kinematic_variables[0]],
                 points_before_cuts_i[kinematic_variables[1]],
                 **kwargs,
@@ -122,7 +151,7 @@ def plot_kinematic_coverage(
 
         kwargs_default = {
             "marker": marker,
-            "markersize": 3,
+            "s": 3,
             "ls": "",
             "zorder": 1.2,
             "label": groupby.labels[label_i] if groupby is not None else str(label_i),
@@ -140,7 +169,23 @@ def plot_kinematic_coverage(
 
         kwargs = update_kwargs(kwargs_default, kwargs_points, i)
 
-        ax.plot(p_i[kinematic_variables[0]], p_i[kinematic_variables[1]], **kwargs)
+        if isinstance(color_by, pd.Series) and color_by.index.name=="id_point":
+            kwargs = update_kwargs(kwargs, {"color":None}, i)                 
+            sc = ax.scatter(p_i[kinematic_variables[0]], p_i[kinematic_variables[1]], **kwargs, c=color_by, cmap=color_cmap, norm=color_norm)
+        elif isinstance(color_by, pd.Series) and color_by.index.name=="id_dataset":
+            kwargs_noc = update_kwargs(kwargs, {"color":None}, i)                         
+            for i_k, k in enumerate(p_i.index.unique()):
+                if i_k==0:
+                    sc = ax.scatter(p_i.loc[k][kinematic_variables[0]], p_i.loc[k][kinematic_variables[1]], **kwargs_noc, c=[color_by[k]]*len(p_i.loc[k][kinematic_variables[0]]), cmap=color_cmap, norm=color_norm)
+                else:
+                    kwargs_nol = update_kwargs(kwargs_noc, {"label":None}, i)
+                    if isinstance(p_i.loc[k][kinematic_variables[0]], float):
+                        sc = ax.scatter(p_i.loc[k][kinematic_variables[0]], p_i.loc[k][kinematic_variables[1]], **kwargs_nol, c=[color_by[k]], cmap=color_cmap, norm=color_norm)
+                    else:
+                        sc = ax.scatter(p_i.loc[k][kinematic_variables[0]], p_i.loc[k][kinematic_variables[1]], **kwargs_nol, c=[color_by[k]]*len(p_i.loc[k][kinematic_variables[0]]), cmap=color_cmap, norm=color_norm)
+
+        else: 
+            sc = ax.scatter(p_i[kinematic_variables[0]], p_i[kinematic_variables[1]], **kwargs)
 
     if cuts is not None:
         for i, cut in enumerate(cuts):
@@ -244,3 +289,17 @@ def plot_kinematic_coverage(
                             )
 
                     ax.annotate(**kwargs)
+    if isinstance(color_by, pd.Series) and colorbar:
+        kwargs_colorbar_default = {"label":"$\\chi^2$"}
+        kwargs_colorbar_updated = update_kwargs(kwargs_colorbar_default, kwargs_colorbar)
+        ax.figure.colorbar( sc, ax=ax, **kwargs_colorbar_updated)
+
+    
+    if legend: 
+        leg=ax.legend(**kwargs_legend)
+        if isinstance(color_by, pd.Series):
+            for h in leg.legend_handles:
+                h.set_linewidths([1.0])
+                h.set_facecolor("black")
+                h.set_edgecolor("black")
+                h.set_color("black")

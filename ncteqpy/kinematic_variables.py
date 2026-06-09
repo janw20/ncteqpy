@@ -16,6 +16,7 @@ Q2 = sp.Symbol("Q2")
 W2 = sp.Symbol("W2")
 sqrt_s = sp.Symbol("sqrt_s")
 E_had = sp.Symbol("E_had")
+m = sp.Symbol("m")
 
 label_to_kinvar: dict[str, sp.Symbol] = {
     "pT": pT,
@@ -48,8 +49,10 @@ Q2_sih = sp.Max(pT / 2, 1.3) ** 2
 x_sih = sp.sqrt(Q2) / sqrt_s * sp.exp(-y)
 
 x_wzprod = sp.sqrt(Q2) / sqrt_s * sp.exp(-eta)
+Q2_wzprod= (x*sqrt_s/sp.exp(-eta))**2
+Q2_wzprod_pT = pT**2+m**2
 x_wzprod_bin = sp.sqrt(Q2) / sqrt_s * sp.exp(-(eta_min + eta_max) / 2)
-
+x_wzprod_bin_y = sp.sqrt(Q2) / sqrt_s * sp.exp(-(y_min + y_max) / 2)
 m_charm = 1.3
 Q2_hq_pT = pT**2 + m_charm**2
 Q2_hq_pT_bin = ((pT_min + pT_max) / 2) ** 2 + m_charm**2

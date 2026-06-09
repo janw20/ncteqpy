@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
+from matplotlib.colors import Colormap
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
@@ -21,11 +23,14 @@ from ncteqpy.kinematic_variables import (
     Q2_disdimu,
     Q2_hq_pT_bin,
     Q2_sih,
+    Q2_wzprod_pT,
+    Q2_wzprod,
     W2_dis,
     W2_disdimu,
     x_hq_bin,
     x_sih,
     x_wzprod_bin,
+    x_wzprod_bin_y,
 )
 from ncteqpy.plot.kinematic_coverage import plot_kinematic_coverage
 from ncteqpy.settings import Settings
@@ -543,12 +548,45 @@ class Datasets(jaml.YAMLWrapper):
             {
                 "WPLUS": m2_W,
                 "WMINUS": m2_W,
-                "Z": m2_Z,
+                "Z0": m2_Z,
             }
         )
+        
+        mask_pt = mask_wzprod_Q2 & self._points["pT"].notna()
+        self._points.loc[mask_pt, "Q2"] =  self._points.loc[mask_pt, "pT"]**2 + m2_Z
+        
+
         self._points.loc[mask_wzprod_x, "x"] = sp.lambdify(
             tuple(x_wzprod_bin.free_symbols), x_wzprod_bin
         )(**self._points.loc[mask_wzprod_x, ["Q2", "sqrt_s", "eta_min", "eta_max"]])
+
+        mask_y = mask_wzprod_x & self._points["y"].notna()
+
+        self._points.loc[mask_y, "x"] = sp.lambdify(
+            tuple(x_wzprod_bin_y.free_symbols), x_wzprod_bin_y
+        )(**self._points.loc[mask_y, ["Q2", "sqrt_s", "y_min", "y_max"]])
+
+        # calculate x and Q2 for WCPROD
+        mask_wcprod = self._points["type_experiment"] == "WCPROD"
+        mask_wcprod_Q2 = mask_wcprod & self._points["Q2"].isna()
+        mask_wcprod_x = mask_wcprod & self._points["x"].isna()
+
+        m2_W = 80.4**2
+        self._points.loc[mask_wcprod_Q2, "Q2"] =  m2_W
+        
+        mask_pt = mask_wcprod_Q2 & self._points["pT"].notna()
+        self._points.loc[mask_pt, "Q2"] =  self._points.loc[mask_pt, "pT"]**2 + m2_Z
+        
+
+        self._points.loc[mask_wcprod_x, "x"] = sp.lambdify(
+            tuple(x_wzprod_bin.free_symbols), x_wzprod_bin
+        )(**self._points.loc[mask_wcprod_x, ["Q2", "sqrt_s", "eta_min", "eta_max"]])
+
+        mask_y = mask_wcprod_x & self._points["y"].notna()
+
+        self._points.loc[mask_y, "x"] = sp.lambdify(
+            tuple(x_wzprod_bin_y.free_symbols), x_wzprod_bin_y
+        )(**self._points.loc[mask_y, ["Q2", "sqrt_s", "y_min", "y_max"]])
 
         # calculate x and Q2 for SIH
         mask_sih = self._points["type_experiment"] == "SIH"
@@ -858,6 +896,13 @@ class Datasets(jaml.YAMLWrapper):
         ) = None,
         cuts_labels: list[tuple[float, str] | None] | None = None,
         cuts_labels_offset: float | list[float | None] | None = None,
+        color_by: pd.Series[float] | None = None,
+        color_cmap: Colormap | None = None,
+        color_norm: Normalize | None =None, 
+        colorbar: bool = True,
+        legend: bool = True,
+        kwargs_colorbar: dict[str, Any] | None = None,
+        kwargs_legend: dict[str, Any]  = {},
         kwargs_points: dict[str, Any] | list[dict[str, Any] | None] | None = None,
         kwargs_points_before_cuts: (
             dict[str, Any] | list[dict[str, Any] | None] | None
@@ -887,6 +932,20 @@ class Datasets(jaml.YAMLWrapper):
             Labels to annotate the cuts by, by default None. These must be in the same ordering as `cuts`.
         cuts_labels_offset : float | list[float  |  None] | None, optional
             Offset in units of font size to shift the label orthogonally away from the curve representing a cut, by default None. Must be in the same order as `cuts` and `cuts_labels`.
+        color_by : pd.Series[float] | None, optional
+            Series of points or datasets to color by, by default None. If the index of the Series is "id_point", the points will be colored individually, if the index is "id_dataset", the points will be colored by dataset.
+        color_cmap : Colormap | None, optional
+            Colormap to use if `color_by` is given, by default None
+        color_norm : Normalize | None, optional
+            Normalization to use if `color_by` is given, by default None
+        colorbar : bool, optional
+            Whether to display a colorbar if `color_by` is given, by default True
+        legend : bool, optional
+            Whether to display a legend, by default True. Note that if `color_by` is given, the legend will only show the groups
+        kwargs_colorbar : dict[str, Any] | None, optional
+            Keyword arguments to adjust plotting the colorbar, passed to `ax.figure.colorbar`, by default None.
+        kwargs_legend : dict[str, Any], optional
+        Keyword arguments to adjust plotting the legend, passed to `ax.legend`, by default {}.
         kwargs_points : dict[str, Any] | list[dict[str, Any] | None] | None, optional
             Keyword arguments to adjust plotting the points, passed to `ax.plot`, by default None.
         kwargs_points_before_cuts : dict[str, Any] | list[dict[str, Any] | None] | None, optional
@@ -926,6 +985,13 @@ class Datasets(jaml.YAMLWrapper):
             cuts_labels=cuts_labels,
             cuts_labels_offset=cuts_labels_offset,
             kwargs_points=kwargs_points,
+            color_by=color_by,
+            color_cmap=color_cmap,
+            color_norm=color_norm, 
+            colorbar=colorbar,
+            legend=legend,
+            kwargs_colorbar=kwargs_colorbar,
+            kwargs_legend=kwargs_legend,
             kwargs_points_before_cuts=kwargs_points_before_cuts,
             kwargs_cuts=kwargs_cuts,
             kwargs_cuts_labels=kwargs_cuts_labels,

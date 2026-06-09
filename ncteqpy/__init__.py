@@ -33,6 +33,9 @@ from ncteqpy.kinematic_variables import (
     y,
     y_max,
     y_min,
+    Q2_wzprod,
+    Q2_wzprod_pT,
+    m,
 )
 from ncteqpy.labels import nucleus_to_latex
 from ncteqpy.plot.grid import AxesGrid
