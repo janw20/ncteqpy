@@ -607,11 +607,11 @@ def plot_common(
         if "data" in points:
             if points.iloc[0][["Z1", "A1"]].notna().all():
                 A_symbols["A1_sym"] = nc_labels.nucleus_to_latex(
-                    Z=points.iloc[0]["Z1"], A=points.iloc[0]["A1"], superscript=True
+                    Z=points.iloc[0]["Z1"], A=points.iloc[0]["A1"], show_A=True
                 )
             if points.iloc[0][["Z2", "A2"]].notna().all():
                 A_symbols["A2_sym"] = nc_labels.nucleus_to_latex(
-                    Z=points.iloc[0]["Z2"], A=points.iloc[0]["A2"], superscript=True
+                    Z=points.iloc[0]["Z2"], A=points.iloc[0]["A2"], show_A=True
                 )
 
             subplot_label_str = subplot_label_format.format(

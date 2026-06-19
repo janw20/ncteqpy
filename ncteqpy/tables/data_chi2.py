@@ -324,13 +324,13 @@ def table_data_chi2(
             table[col] = [
                 (
                     "$"
-                    + nucleus_to_latex(A=A1, Z=Z1, superscript=True)
+                    + nucleus_to_latex(A=A1, Z=Z1, show_A=True)
                     + "/"
-                    + nucleus_to_latex(A=A2, Z=Z2, superscript=True)
+                    + nucleus_to_latex(A=A2, Z=Z2, show_A=True)
                     + "$"
                     if "/" in reaction
                     else "$"
-                    + nucleus_to_latex(A=A_heavier, Z=Z_heavier, superscript=True)
+                    + nucleus_to_latex(A=A_heavier, Z=Z_heavier, show_A=True)
                     + "$"
                 )
                 for A1, Z1, A2, Z2, A_heavier, Z_heavier, reaction in datasets_index_filtered[

@@ -369,7 +369,7 @@ def reaction_to_latex(reaction: str) -> str:
 
     if len(reaction_single) > 2:
         raise ValueError("reaction can only have one numerator and denominator")
-    
+
     reaction_latex: list[str] = []
     for r in reaction_single:
         reaction_latex.append("")
@@ -389,19 +389,24 @@ def reaction_to_latex(reaction: str) -> str:
                     reaction_latex[-1] += "+"
 
                 reaction_latex[-1] += reaction_particle_to_latex[term]
-                
+
                 prev_was_particle = True
-            elif (m := re.match(r"(.*?)([0-9]+)", term)):
+            elif m := re.match(r"(.*?)([0-9]+)", term):
                 if prev_was_particle:
                     reaction_latex[-1] += "+"
-                
+
                 if m.group(1) in reaction_particle_to_latex:
-                    reaction_latex[-1] += "{}^{" + m.group(2) + "}" + reaction_particle_to_latex[m.group(1)]
-                
+                    reaction_latex[-1] += (
+                        "{}^{"
+                        + m.group(2)
+                        + "}"
+                        + reaction_particle_to_latex[m.group(1)]
+                    )
+
                 prev_was_particle = True
             else:
                 raise ValueError(f"Unknown term '{term}' reaction {reaction}")
-            
+
     if len(reaction_latex) == 1:
         return reaction_latex[0]
     else:
@@ -412,7 +417,7 @@ def nucleus_to_latex(
     Z: int | float | None = None,
     A: int | float | None = None,
     long: bool = False,
-    superscript: bool = False,
+    show_A: bool = False,
 ) -> str:
     """Convert atomic number and mass number to element symbol.
 
@@ -423,7 +428,9 @@ def nucleus_to_latex(
     Z : int | float | None, optional
         Atomic number of the element. By default None.
     long : bool, optional
-        If the name of the element should be returned instead of its name (e.g. "Lead" instead of "Pb"). By default False.
+        If the name of the element should be returned instead of its symbol (e.g. "Lead" instead of "Pb"). By default False.
+    show_A : bool, optional
+        If the element symbol includes the mass number, by default False.
 
     Returns
     -------
@@ -448,15 +455,20 @@ def nucleus_to_latex(
     else:
         return ""
 
-    if long:
-        res = cast(str, row["Name"])
+    if show_A and not row["AtomicNumber"] == 1:
+        A_str = (
+            f"{round(A if A is not None and not np.isnan(A) else row['AtomicMass'])}"
+        )
+
+        if long:
+            A_str = f"-{A_str}"
     else:
-        res = cast(str, row["Symbol"])
+        A_str = ""
 
-    res = r"\mathrm{" + res + r"}"
-
-    if superscript and not row["AtomicNumber"] == 1:
-        res = f"^{{{round(A if A is not None and not np.isnan(A) else row['AtomicMass'])}}}{res}"
+    if long:
+        res = f"\\text{{{row["Name"]}{A_str}}}"
+    else:
+        res = f"^{{{A_str}}}\\mathrm{{{row["Symbol"]}}}"
 
     return res
 

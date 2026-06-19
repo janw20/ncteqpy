@@ -140,20 +140,20 @@ class DatasetsGroupBy:
                 for key, df in self._groupby:
                     A_symbols = {
                         "A1_sym": nucleus_to_latex(
-                            A=df.iloc[0]["A1"], Z=df.iloc[0]["Z1"], superscript=True
+                            A=df.iloc[0]["A1"], Z=df.iloc[0]["Z1"], show_A=True
                         ),
                         "A2_sym": nucleus_to_latex(
-                            A=df.iloc[0]["A2"], Z=df.iloc[0]["Z2"], superscript=True
+                            A=df.iloc[0]["A2"], Z=df.iloc[0]["Z2"], show_A=True
                         ),
                         "A_lighter_sym": nucleus_to_latex(
                             A=df.iloc[0]["A_lighter"],
                             Z=df.iloc[0]["Z_lighter"],
-                            superscript=True,
+                            show_A=True,
                         ),
                         "A_heavier_sym": nucleus_to_latex(
                             A=df.iloc[0]["A_heavier"],
                             Z=df.iloc[0]["Z_heavier"],
-                            superscript=True,
+                            show_A=True,
                         ),
                     }
 
@@ -173,20 +173,20 @@ class DatasetsGroupBy:
             for i, (key, df) in enumerate(self._groupby):
                 A_symbols = {
                     "A1_sym": nucleus_to_latex(
-                        A=df.iloc[0]["A1"], Z=df.iloc[0]["Z1"], superscript=True
+                        A=df.iloc[0]["A1"], Z=df.iloc[0]["Z1"], show_A=True
                     ),
                     "A2_sym": nucleus_to_latex(
-                        A=df.iloc[0]["A2"], Z=df.iloc[0]["Z2"], superscript=True
+                        A=df.iloc[0]["A2"], Z=df.iloc[0]["Z2"], show_A=True
                     ),
                     "A_lighter_sym": nucleus_to_latex(
                         A=df.iloc[0]["A_lighter"],
                         Z=df.iloc[0]["Z_lighter"],
-                        superscript=True,
+                        show_A=True,
                     ),
                     "A_heavier_sym": nucleus_to_latex(
                         A=df.iloc[0]["A_heavier"],
                         Z=df.iloc[0]["Z_heavier"],
-                        superscript=True,
+                        show_A=True,
                     ),
                 }
 
