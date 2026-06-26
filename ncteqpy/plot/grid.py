@@ -36,6 +36,7 @@ class AxesGrid:
     _ax: npt.NDArray[Axes | None]
     _ax_all: npt.NDArray[Axes]
     _ax_real: npt.NDArray[Axes]
+    _ax_not_real: npt.NDArray[Axes]
     _ax_unit_real: npt.NDArray[Axes]
 
     _ax_left: npt.NDArray[Axes]
@@ -189,9 +190,14 @@ class AxesGrid:
             self._ax, unit_shape, n_unit_cols, n_unit_real
         )
 
+        self._ax_not_real = np.array([], dtype=object)
+
         if isinstance(ax, np.ndarray):
             # remove the superfluous axes in the lower left corner
             if n_none > 0:
+                self._ax_not_real = self._ax[
+                    -unit_shape[0] :, -n_unit_none * unit_shape[1] :
+                ].flatten()
                 self._ax[-unit_shape[0] :, -n_unit_none * unit_shape[1] :] = None
 
         self._ax_real = self._ax[self._ax != None].flatten()
@@ -238,16 +244,16 @@ class AxesGrid:
         self._sharey = sharey
 
         if sharex:
-            for ax_i in self.ax[:-1, :].flat:
+            for ax_i in self.ax_bottom:
                 if ax_i is not None:
                     ax_i: plt.Axes
                     ax_i.tick_params("x", which="both", labelbottom=False)
-                    ax_i.set_xlabel("")
+                    ax_i.xaxis.label.set_visible(False)
 
         if sharey:
             for ax_i in self.ax_right:
                 ax_i.tick_params("y", which="both", labelleft=False)
-                ax_i.set_ylabel("")
+                ax_i.yaxis.label.set_visible(False)
 
         def set_missing_labels(event) -> None:
 
@@ -256,11 +262,11 @@ class AxesGrid:
             for i, j in self.indices_none:
                 self._ax_all[i, j].set_visible(False)
 
-            if sharex and self.n_none > 0:
+            if self.n_none > 0:
                 for ax_i in self.ax_bottom:
                     ax_i: plt.Axes
                     ax_i.tick_params("x", which="both", labelbottom=True)
-                    ax_i.set_xlabel(self.ax_bottom[-1].get_xlabel())
+                    ax_i.xaxis.label.set_visible(True)
 
         self.fig.canvas.mpl_connect("draw_event", set_missing_labels)
 
@@ -466,13 +472,35 @@ class AxesGrid:
         if pos is not None:
             self.locate_ax(pos).add_artist(artist)
 
-    def prune_labels(self) -> None:
-        if self.sharex:
+    def prune_labels(self, only_shared: bool = True) -> None:
+        if self.sharex or not only_shared:
+
+            # not self.ax_bottom because then there is a gap between the last and second-to-last row
             for ax_i in self._ax_all[:-1].flat:
                 ax_i: plt.Axes
-                ax_i.set_xlabel("")
+                ax_i.xaxis.label.set_visible(False)
+                ax_i.tick_params(
+                    axis="x", which="both", labelbottom=False, labeltop=False
+                )
 
-        if self.sharey:
+            for ax_i in self._ax_not_real:
+                ax_i: plt.Axes
+                ax_i.xaxis.label.set_visible(False)
+                ax_i.tick_params(
+                    axis="x", which="both", labelbottom=False, labeltop=False
+                )
+
+        if self.sharey or not only_shared:
             for ax_i in self.ax_right:
                 ax_i: plt.Axes
-                ax_i.set_ylabel("")
+                ax_i.yaxis.label.set_visible(False)
+                ax_i.tick_params(
+                    axis="y", which="both", labelleft=False, labelright=False
+                )
+
+            for ax_i in self._ax_not_real:
+                ax_i: plt.Axes
+                ax_i.yaxis.label.set_visible(False)
+                ax_i.tick_params(
+                    axis="y", which="both", labelleft=False, labelright=False
+                )
