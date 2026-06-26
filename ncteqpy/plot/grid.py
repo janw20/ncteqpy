@@ -369,6 +369,11 @@ class AxesGrid:
         return self._ax_real
 
     @property
+    def ax_not_real(self) -> npt.NDArray[Axes]:
+        """numpy.array of shape (n_none,) containing the invisible axes"""
+        return self._ax_not_real
+
+    @property
     def ax_unit_real(self) -> npt.NDArray[Axes]:
         """numpy.array of shape (n_unit_real, unit_shape[0], unit_shape[1]) containing the actual (not left blank) axes"""
         return self._ax_unit_real
