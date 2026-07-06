@@ -418,6 +418,7 @@ def nucleus_to_latex(
     A: int | float | None = None,
     long: bool = False,
     show_A: bool = False,
+    show_Z: bool = False,
 ) -> str:
     """Convert atomic number and mass number to element symbol.
 
@@ -431,6 +432,8 @@ def nucleus_to_latex(
         If the name of the element should be returned instead of its symbol (e.g. "Lead" instead of "Pb"). By default False.
     show_A : bool, optional
         If the element symbol includes the mass number, by default False.
+    show_Z : bool, optional
+        If the element symbol includes the atomic number, by default False.
 
     Returns
     -------
@@ -465,10 +468,23 @@ def nucleus_to_latex(
     else:
         A_str = ""
 
+    if show_Z and not row["AtomicNumber"] == 1:
+        Z_str = (
+            f"{round(Z if Z is not None and not np.isnan(Z) else row['AtomicNumber'])}"
+        )
+    else:
+        Z_str = ""
+
+    # needed for right-alignment
+    if len(A_str) > len(Z_str):
+        diff = len(A_str) - len(Z_str)
+
+        Z_str = diff * r"\ \ " + Z_str
+
     if long:
         res = f"\\text{{{row["Name"]}{A_str}}}"
     else:
-        res = f"^{{{A_str}}}\\mathrm{{{row["Symbol"]}}}"
+        res = f"{{}}^{{{A_str}}}_{{{Z_str}}}\\mathrm{{{row["Symbol"]}}}"
 
     return res
 
