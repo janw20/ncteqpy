@@ -75,6 +75,8 @@ theory_yaml_to_py = {
     "RF2ISO": "ratio_F2_iso",
     "APPLGRID": "applgrid",
     "RAPPLGRID": "rapplgrid",
+    "PINEAPPL": "pineappl",
+    "FKTABLE": "fktable",
     "CMS_RSIG_RATIO": "cms_ratio_sigma_double",
     "CMS_RSIG_ETA": "cms_ratio_sigma_eta",
 }
