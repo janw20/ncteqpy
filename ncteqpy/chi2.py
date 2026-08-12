@@ -176,6 +176,8 @@ class Chi2(jaml.YAMLWrapper):
                         lambda x: (x**2).sum()
                     )
                 )
+            else:
+                self._snapshots_breakdown_nuisance = pd.DataFrame(columns=["id_snapshot", "id_dataset", "nuisance_parameters", "penalty"])
 
             if "penaltyBreakdown" in snapshots[0] and isinstance(
                 snapshots[0]["penaltyBreakdown"], list
@@ -199,6 +201,10 @@ class Chi2(jaml.YAMLWrapper):
             self._pickle(
                 self._snapshots_breakdown_nuisance,
                 "chi2_snapshots_breakdown_nuisance",
+            )
+            self._pickle(
+                self._snapshots_breakdown_normalizations,
+                "chi2_snapshots_breakdown_normalizations",
             )
 
     # parsing the perPointBreakdowns takes much longer than all the other fields, so we load these separately
@@ -287,44 +293,49 @@ class Chi2(jaml.YAMLWrapper):
 
             # calculate correlation penalties, first the evenly distributed ones...
 
-            # number of points per data set, with multi-index (`id_snapshot`, `id_dataset`)
-            num_points = self._snapshots_breakdown_points.groupby(
-                ["id_snapshot", "id_dataset"]
-            ).size()
-            # evenly distributed penalty per data set, with multi-index (`id_snapshot`, `id_dataset`)
-            penalty_corr_even = (
-                self.snapshots_breakdown_nuisance["penalty"] / num_points
-            )
-            penalty_corr_even.name = "penalty_corr_even"
+            if self.snapshots_breakdown_nuisance.shape[0] > 0:
+                # number of points per data set, with multi-index (`id_snapshot`, `id_dataset`)
+                num_points = self._snapshots_breakdown_points.groupby(
+                    ["id_snapshot", "id_dataset"]
+                ).size()
 
-            # the points of each data set get the same penalty_corr_even
-            self._snapshots_breakdown_points = self._snapshots_breakdown_points.join(
-                penalty_corr_even, on=["id_snapshot", "id_dataset"]
-            ).fillna(dict(penalty_corr_even=0))
-
-            # ...and second the proportionally distributed ones
-
-            # chi2 without penalty of each data set, with multi-index (`id_snapshot`, `id_dataset`)
-            chi2_data = self._snapshots_breakdown_points.groupby(
-                ["id_snapshot", "id_dataset"]
-            )["chi2_shifted"].sum()
-            # proportionally distributed penalty for each data set, with multi-index (`id_snapshot`, `id_point`, `id_dataset`)
-            penalty_corr_prop = (
-                self._snapshots_breakdown_points.set_index("id_dataset", append=True)[
-                    "chi2_shifted"
-                ]
-                / chi2_data
-                * self.snapshots_breakdown_nuisance["penalty"]
-            )
-            # get only the data sets that are actually in the snapshots, otherwise setting the column in _snapshots_breakdown_points does not work
-            penalty_corr_prop = penalty_corr_prop[
-                penalty_corr_prop.index.get_level_values("id_dataset").isin(
-                    self._snapshots_breakdown_points["id_dataset"].unique()
+                # evenly distributed penalty per data set, with multi-index (`id_snapshot`, `id_dataset`)
+                penalty_corr_even = (
+                    self.snapshots_breakdown_nuisance["penalty"] / num_points
                 )
-            ]
-            self._snapshots_breakdown_points["penalty_corr_prop"] = (
-                penalty_corr_prop.reset_index("id_dataset", drop=True).fillna(0)
-            )
+                penalty_corr_even.name = "penalty_corr_even"
+
+                # the points of each data set get the same penalty_corr_even
+                self._snapshots_breakdown_points = self._snapshots_breakdown_points.join(
+                    penalty_corr_even, on=["id_snapshot", "id_dataset"]
+                ).fillna(dict(penalty_corr_even=0))
+
+                # ...and second the proportionally distributed ones
+
+                # chi2 without penalty of each data set, with multi-index (`id_snapshot`, `id_dataset`)
+                chi2_data = self._snapshots_breakdown_points.groupby(
+                    ["id_snapshot", "id_dataset"]
+                )["chi2_shifted"].sum()
+                # proportionally distributed penalty for each data set, with multi-index (`id_snapshot`, `id_point`, `id_dataset`)
+                penalty_corr_prop = (
+                    self._snapshots_breakdown_points.set_index("id_dataset", append=True)[
+                        "chi2_shifted"
+                    ]
+                    / chi2_data
+                    * self.snapshots_breakdown_nuisance["penalty"]
+                )
+                # get only the data sets that are actually in the snapshots, otherwise setting the column in _snapshots_breakdown_points does not work
+                penalty_corr_prop = penalty_corr_prop[
+                    penalty_corr_prop.index.get_level_values("id_dataset").isin(
+                        self._snapshots_breakdown_points["id_dataset"].unique()
+                    )
+                ]
+                self._snapshots_breakdown_points["penalty_corr_prop"] = (
+                    penalty_corr_prop.reset_index("id_dataset", drop=True).fillna(0)
+                )
+            else:
+                self._snapshots_breakdown_points["penalty_corr_even"] = 0.0
+                self._snapshots_breakdown_points["penalty_corr_prop"] = 0.0
 
             # calculate normalization penalties, first the evenly distributed ones...
 
