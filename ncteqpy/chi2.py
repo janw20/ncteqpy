@@ -263,17 +263,20 @@ class Chi2(jaml.YAMLWrapper):
             )
 
             # multiply the theory for which normalization is fitted with its corresponding factor
-            mask = self._snapshots_breakdown_points["id_dataset"].isin(
-                self.last_normalizations.index
+            index = (
+                self._snapshots_breakdown_points.reset_index()
+                .set_index(["id_snapshot", "id_dataset"])
+                .index
             )
+            mask = index.isin(self.snapshots_breakdown_normalizations.index)
             # `theory_with_normalization_only` is NaN for data sets that are not normalization-corrected
             self._snapshots_breakdown_points.loc[
                 mask, "theory_with_normalization_only"
             ] = (
                 self._snapshots_breakdown_points.loc[mask, "theory"]
-                * self.last_normalizations.loc[
-                    self._snapshots_breakdown_points.loc[mask, "id_dataset"]
-                ]["factor"].to_numpy()
+                * self.snapshots_breakdown_normalizations.loc[index[mask]][
+                    "factor"
+                ].to_numpy()
             )
 
             # `theory_with_normalization` is filled with `theory` where `theory_with_normalization_only` is NaN
