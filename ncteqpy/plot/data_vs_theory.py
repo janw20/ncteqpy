@@ -970,17 +970,17 @@ def _plot_theory(
 
                 if (
                     pdf_uncertainty_convention == "sym"
-                    and "theory_pdf_unc_sym" in points
+                    and f"{y_col}_pdf_unc_sym" in points
                 ):
-                    y_pdf_unc_lower = points["theory_pdf_unc_sym"].to_numpy()
+                    y_pdf_unc_lower = points[f"{y_col}_pdf_unc_sym"].to_numpy()
                     y_pdf_unc_upper = y_pdf_unc_lower
                 elif (
                     pdf_uncertainty_convention == "asym"
-                    and "theory_pdf_unc_asym_lower" in points
-                    and "theory_pdf_unc_asym_upper" in points
+                    and f"{y_col}_pdf_unc_asym_lower" in points
+                    and f"{y_col}_pdf_unc_asym_upper" in points
                 ):
-                    y_pdf_unc_lower = points["theory_pdf_unc_asym_lower"].to_numpy()
-                    y_pdf_unc_upper = points["theory_pdf_unc_asym_upper"].to_numpy()
+                    y_pdf_unc_lower = points[f"{y_col}_pdf_unc_asym_lower"].to_numpy()
+                    y_pdf_unc_upper = points[f"{y_col}_pdf_unc_asym_upper"].to_numpy()
                 else:
                     y_pdf_unc_upper = np.ones(points[y_col].size) * np.nan
                     y_pdf_unc_lower = y_pdf_unc_upper
@@ -988,8 +988,8 @@ def _plot_theory(
                 y_pdf_unc_lower = _calculate_ratio(
                     plot_type_i, y_pdf_unc_lower, points_data, points_theory
                 )
-                y_pdf_unc_lower = _calculate_ratio(
-                    plot_type_i, y_pdf_unc_lower, points_data, points_theory
+                y_pdf_unc_upper = _calculate_ratio(
+                    plot_type_i, y_pdf_unc_upper, points_data, points_theory
                 )
 
                 if plot_binned:
@@ -1010,8 +1010,8 @@ def _plot_theory(
                 # fmt: off
                 ax_i.fill_between(
                     x,
-                    (y + y_pdf_unc_lower) * offset_factor + offset_summand,  # pyright: ignore[reportArgumentType]
                     (y - y_pdf_unc_lower) * offset_factor + offset_summand,  # pyright: ignore[reportArgumentType]
+                    (y + y_pdf_unc_upper) * offset_factor + offset_summand,  # pyright: ignore[reportArgumentType]
                     **kwargs_theory_unc_updated,
                 )
                 # fmt: on
