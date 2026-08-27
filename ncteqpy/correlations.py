@@ -37,6 +37,7 @@ class Chi2PDFCorrelation(ABC):
     _chi2: Chi2
     _pdf_set: pp.PDFSet
     _groupby: DatasetsGroupBy | None
+    _chi2_penalty_convention: Literal["even", "proportional", "without"]
     _grouper: pd.Series
     _data: pd.DataFrame
     _data_total: pd.DataFrame
@@ -46,6 +47,9 @@ class Chi2PDFCorrelation(ABC):
         chi2: Chi2,
         pdfs: pp.PDFSet,
         groupby: DatasetsGroupBy | None = None,
+        chi2_penalty_convention: Literal[
+            "even", "proportional", "without"
+        ] = "proportional",
     ) -> None:
         """Creates an instance to calculate and plot the correlation.
 
@@ -67,6 +71,7 @@ class Chi2PDFCorrelation(ABC):
         self._chi2 = chi2
         self._pdf_set = pdfs
         self._groupby = groupby
+        self._chi2_penalty_convention = chi2_penalty_convention
 
         if groupby is not None:
             self._grouper = groupby.grouper
@@ -215,8 +220,20 @@ class Chi2PDFCorrelation(ABC):
                 columns=pd.Index([str(observable)], name="observable"),
             )
 
+            if self._chi2_penalty_convention == "without":
+                snapshots_breakdown_datasets = self.chi2.snapshots_breakdown_datasets
+            else:
+                snapshots_breakdown_datasets = (
+                    self.chi2.snapshots_breakdown_datasets.add(
+                        other=self.chi2.snapshots_breakdown_normalizations[
+                            f"penalty_dataset_{self._chi2_penalty_convention}"
+                        ].unstack("id_dataset"),
+                        fill_value=0,
+                    )
+                )
+
             chi2_data = (
-                self.chi2.snapshots_breakdown_datasets.iloc[
+                snapshots_breakdown_datasets.iloc[
                     -2 * len(self.chi2.parameters_names) - 1 :
                 ]
                 .T.groupby(
@@ -298,8 +315,20 @@ class Chi2PDFCorrelation(ABC):
                 columns=pd.Index([str(observable)], name="observable"),
             )
 
+            if self._chi2_penalty_convention == "without":
+                snapshots_breakdown_datasets = self.chi2.snapshots_breakdown_datasets
+            else:
+                snapshots_breakdown_datasets = (
+                    self.chi2.snapshots_breakdown_datasets.add(
+                        other=self.chi2.snapshots_breakdown_normalizations[
+                            f"penalty_dataset_{self._chi2_penalty_convention}"
+                        ].unstack("id_dataset"),
+                        fill_value=0,
+                    )
+                )
+
             chi2_data = (
-                self.chi2.snapshots_breakdown_datasets.iloc[
+                snapshots_breakdown_datasets.iloc[
                     -2 * len(self.chi2.parameters_names) - 1 :
                 ]
                 .sum(axis=1)
