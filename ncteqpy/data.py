@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
+
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
@@ -29,6 +31,12 @@ from ncteqpy.kinematic_variables import (
 )
 from ncteqpy.plot.kinematic_coverage import plot_kinematic_coverage
 from ncteqpy.settings import Settings
+from ncteqpy.plot.data_vs_theory import _plot_data, _add_curve_labels, _set_labels, _get_kinematic_variable, _check_ax_offsets, _calculate_ratio
+from ncteqpy.util import update_kwargs
+import ncteqpy.labels as nc_labels
+from ncteqpy.plot.util import AdditionalLegend
+
+
 
 
 # TODO: make possible to load only subdirs or list of paths
@@ -36,8 +44,8 @@ class Datasets(jaml.YAMLWrapper):
 
     _cuts: Cuts | None = None
     _index: pd.DataFrame | None = None
-    _labels_x: pd.DataFrame | None = None
-    _labels_y: pd.DataFrame | None = None
+    _labels_x: dict | None = None
+    _labels_y: str | None = None
     _points: pd.DataFrame | None = None
     _points_after_cuts: pd.DataFrame | None = None
     _num_points: pd.Series[int] | None = None
@@ -580,7 +588,6 @@ class Datasets(jaml.YAMLWrapper):
             )(**self._points.loc[mask_hq_x_diff, ["Q2", "sqrt_s", "y_min", "y_max"]])
 
         # assert self._points[["x", "Q2"]].notna().all().all()
-
         self._points["unc_tot"] = (
             self._points[["unc_stat", "unc_sys_uncorr"]] ** 2
         ).sum(
@@ -940,11 +947,16 @@ class Dataset:
     _path: Path
     _id: int | None = None
     _type_experiment: str | None = None
+    _type_theory: str | None = None
     _A1: int | None = None
     _Z1: int | None = None
     _A2: int | None = None
     _Z2: int | None = None
     _kinematic_variables: list[str] | None = None
+    _labelsx: dict[str, str] | None = None
+    _labelsy: str | None = None
+    _unitsx: dict[str, str] | None = None
+    _unitsy: str | None = None
     # TODO add rest of fields
 
     _cut: sp.Rel | None = None
@@ -1054,7 +1066,7 @@ class Dataset:
             self._points = self._points[cut_accepts(self.cut, self._points)]
 
         if not "unc_tot" in self._points.columns:
-            errs = list(set(self.points.columns) & set(["unc_stat", "unc_sys"]))
+            errs = list(set(self.points.columns) & set(["unc_stat", "unc_sys_uncorr", "unc_sys_corr"]))
             self._points["unc_tot"] = np.sqrt(np.sum(self.points[errs] ** 2, axis=1))
 
     def __repr__(self):
@@ -1093,7 +1105,54 @@ class Dataset:
             )
 
         return self._type_experiment
+    
+    @property
+    def type_theory(self) -> str:
+        if self._type_theory is None:
+            self._type_theory = cast(
+                str, jaml.nested_get(self.yaml, ["GridSpec", "TypeTheory"])
+            )
 
+        return self._type_theory
+
+    @property
+    def labelsx(self) -> dict[str, str]:
+        if self._labelsx is None:
+            self._labelsx = cast(
+                dict[str, str], jaml.nested_get(self.yaml, ["Labels", "LabelX"])
+            )
+        print(self._labelsx)
+
+        return self._labelsx
+
+    @property
+    def labelsy(self) -> str:
+        if self._labelsy is None:
+            self._labelsy = cast(
+                str, jaml.nested_get(self.yaml, ["Labels", "LabelY"])
+            )
+
+        return self._labelsy
+
+    @property
+    def unitsx(self) -> dict[str, str]:
+        if self._unitsx is None:
+            self._unitsx = cast(
+                dict[str, str], jaml.nested_get(self.yaml, ["Labels", "UnitX"])
+            )
+
+        return self._unitsx
+
+    @property
+    def unitsy(self) -> str:
+        if self._unitsy is None:
+            self._unitsy = cast(
+                str, jaml.nested_get(self.yaml, ["Labels", "UnitY"])
+            )
+
+        return self._unitsy
+    
+   
     @property
     def A1(self) -> int | None:
         if self._A1 is None:
@@ -1244,93 +1303,670 @@ class Dataset:
     def plot(
         self,
         ax: plt.Axes | None = None,
+        x_variable: str | list[str] = "fallback",
         kinematic_variable: str | list[str] | None = None,  # TODO: implement
         bin_label: Literal["legend", "annotate"] | None = None,
         ratio_to: Dataset | None = None,  # TODO: add option for data/theory?
         stat_uncertainty: bool = False,
-        xlabel: bool = False,
-        ylabel: bool = False,
+        xlabel: str | dict[str, str] | None = "fallback",
+        xunit: str | dict[str, str] = "fallback",
+        ylabel: (
+            str
+            | Literal["fallback"]
+            | None
+            | SequenceNotStr[str | Literal["fallback"] | None]
+        ) = "fallback",        
+        yunit: str = "fallback",
+        title: str | None = None,
+        curve_label: (
+            Literal[
+                "annotate above",
+                "annotate right",
+                "ticks",
+                "legend",
+            ]
+            | None
+        ) = "ticks",
+        plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = [
+            "absolute",
+            "theory over data",
+        ],
+        xscale: str | None = None,
+        yscale: str | None = None,
+        y_offset_add: float | Sequence[float] = 0,
+        y_offset_mul: float | Sequence[float] = 0,
         legend: bool = False,
+        subplot_label: Literal["legend"] | None = None,
+        subplot_label_format: str | None = None,
+        curve_groupby: str | list[str] | None = None,
+        kwargs_data: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_xlabel: dict[str, Any] = {},
+        kwargs_ylabel: dict[str, Any] = {},
+        kwargs_title: dict[str, Any] = {},
+        kwargs_legend: dict[str, Any] = {},
+        kwargs_legend_curves: dict[str, Any] = {},
+        kwargs_legend_subplots: dict[str, Any] = {},
+        kwargs_ticks_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_annotate_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
         **kwargs: object,
     ) -> None:
         if ax is None:
             ax = plt.gca()
 
         match self.type_experiment:
-            case "OPENHEAVY" | "QUARKONIUM":
-                for (y_min, y_max), data in self.points.groupby(["y_min", "y_max"]):
-                    kwargs = {**kwargs}
+            case "DIS" | "DY":
+                if x_variable == "fallback":
+                    x_variable = "x"
 
-                    if ratio_to is not None:
-                        data_denom = ratio_to.points.query(
-                            "abs(y_min - @y_min) < 1e-6 and abs(y_max - @y_max) < 1e-6"
-                        )
-                        if not np.all(
-                            np.abs(
-                                data_denom["pT_min"].to_numpy()
-                                - data["pT_min"].to_numpy()
-                            )
-                            < 1e-6
-                        ) or not np.all(
-                            np.abs(
-                                data_denom["pT_max"].to_numpy()
-                                - data["pT_max"].to_numpy()
-                            )
-                            < 1e-6
-                        ):
-                            raise ValueError(
-                                f"Ratio denominator has incompatible pT bins for y ∈ [{y_min}, {y_max}]"
-                            )
+                if y_offset_add is None:
+                    y_offset_add = 0.5
 
-                    if not "label" in kwargs:
-                        kwargs["label"] = (
-                            f"${y_min:.1f} < y < {y_max:.1f}$"
-                            if bin_label == "legend"
-                            else None
-                        )
+                if y_offset_mul is None:
+                    y_offset_mul = 0
 
-                    ax.plot(
-                        np.append(data["pT_min"].iloc[0], data["pT_max"]),
-                        np.append(data["sigma"], data["sigma"].iloc[-1])
-                        / (
-                            np.append(data_denom["sigma"], data_denom["sigma"].iloc[-1])
-                            if ratio_to is not None
-                            else 1
-                        ),
-                        drawstyle="steps-post",
-                        **kwargs,
-                    )
-                    if stat_uncertainty:
-                        ax.errorbar(
-                            data["pT_mid"],
-                            data["sigma"]
-                            / (data_denom["sigma"] if ratio_to is not None else 1),
-                            yerr=data["sigma_err"]
-                            / (data_denom["sigma"] if ratio_to is not None else 1),
-                            ls="",
-                            capsize=1.5,
-                            color=ax.get_lines()[-1].get_color(),
-                        )
+            case "DISNEU":
+                if x_variable == "fallback":
+                    x_variable = "Q2"
+                    if xscale is None:
+                        xscale = "log"
 
-                    if bin_label == "annotate":
-                        raise NotImplementedError(
-                            "bin_label='annotate' not implemented yet"
-                        )
+                if curve_groupby == "fallback":
+                    curve_groupby = "x"
 
-                if xlabel:
-                    ax.set_xlabel(r"$p_{\mathrm{T}}$")
-                if ylabel:
-                    if ratio_to is not None:
-                        ax.set_ylabel(r"$\dfrac{\text{GM-VFNS}}{\text{Data}}$")
-                    else:
-                        ax.set_ylabel(
-                            r"$\dfrac{\mathrm{d}^2\sigma}{\mathrm{d}p_{\mathrm{T}}\,\mathrm{d}y}$ [nb/GeV]"
-                        )
+                if y_offset_add is None:
+                    y_offset_add = 0.5
 
-                if legend and bin_label == "legend":
-                    ax.legend()
+                if y_offset_mul is None:
+                    y_offset_mul = 0
 
-            case _:
-                raise NotImplementedError(
-                    f"Plotting not implemented for experiment type {self.type_experiment}"
+            case "DISDIMU":
+                if x_variable == "fallback":
+                    x_variable = "x"
+
+                if curve_groupby == "fallback":
+                    curve_groupby = "y"
+
+                if y_offset_add is None:
+                    y_offset_add = 0.5
+
+                if y_offset_mul is None:
+                    y_offset_mul = 0
+
+            case "HQ" | "OPENHEAVY" | "QUARKONIA":
+                if x_variable == "fallback":
+                    x_variable = ["pT_min", "pT_max"]
+
+                if curve_groupby == "fallback":
+                    curve_groupby = ["y_min", "y_max"]
+
+                if yscale is None:
+                    yscale = "log"
+
+                if y_offset_add is None:
+                    y_offset_add = [0, 1]
+
+                if y_offset_mul is None:
+                    y_offset_mul = [1, 0]
+
+            case "SIH":
+                if x_variable == "fallback":
+                    x_variable = "pT"
+
+                if yscale is None:
+                    yscale = "log"
+
+                if y_offset_add is None:
+                    y_offset_add = 0
+
+                if y_offset_mul is None:
+                    y_offset_mul = 1
+
+            case "WZPROD"|"WCPROD":
+                if x_variable == "fallback":
+                    x_variable = "eta"
+
+                if y_offset_add is None:
+                    y_offset_add = 0
+
+                if y_offset_mul is None:
+                    y_offset_mul = 1
+
+        assert x_variable is not None
+    
+        if curve_groupby == "fallback":
+            curve_groupby = None
+    
+        if y_offset_add is None:
+            y_offset_add = 0
+    
+        if y_offset_mul is None:
+            y_offset_mul = 0
+    
+        if isinstance(xlabel, dict) and "fallback" in xlabel:
+            xlabel[_get_kinematic_variable(x_variable)] = xlabel["fallback"]
+    
+        # if isinstance(xunit, dict) and "fallback" in xunit:
+        #     xunit[_get_kinematic_variable(x_variable)] = xunit["fallback"]
+
+        points = self.points
+
+        labels_x = self.labelsx
+        labels_y = self.labelsy
+        units_x = self.unitsx
+        units_y = self.unitsy
+
+
+        if xlabel == "fallback":
+            xlabel_updated = {}
+        elif isinstance(xlabel, str):
+            if x_variable is None or x_variable == "fallback":
+                xlabel_updated = {"fallback": xlabel}
+            else:
+                xlabel_updated = {
+                    _get_kinematic_variable(x_variable): xlabel
+                }
+        elif xlabel is None:
+            if x_variable is None or x_variable == "fallback":
+                xlabel_updated = {"fallback": ""}
+            else:
+                xlabel_updated = {
+                    _get_kinematic_variable(x_variable): ""
+                }
+        else:
+            xlabel_updated = xlabel
+
+        if xunit == "fallback":
+            xunit_updated = {}
+        elif isinstance(xunit, str):
+            if x_variable is None or x_variable == "fallback":
+                xunit_updated = {"fallback": xunit}
+            else:
+                xunit_updated = {
+                    _get_kinematic_variable(x_variable): xunit
+                }
+        elif xunit is None:
+            if x_variable is None or x_variable == "fallback":
+                xunit_updated = {"fallback": ""}
+            else:
+                xunit_updated = {
+                    _get_kinematic_variable(x_variable): ""
+                }
+        else:
+            xunit_updated = xunit
+
+        if len(labels_x) > 0:
+            xlabel_updated = {
+                nc_labels.kinvars_yaml_to_py[k]: str(s).replace("\\frac", "\\dfrac")
+                for k, s in labels_x.items()
+            } | xlabel_updated
+
+            xunit_updated = {
+                nc_labels.kinvars_yaml_to_py[k]: (
+                    str(u).replace("\\frac", "\\dfrac")
+                    if (u := s) not in [1.0, "1", "1.0"]
+                    else ""
                 )
+                for k, s in units_x.items()
+            } | xunit_updated
+            print(xunit_updated)
+
+
+        if ylabel == "fallback":
+            ylabel_updated = str(labels_y).replace(
+                "\\frac", "\\dfrac"
+            )
+            yunit = (
+                str(u).replace("\\frac", "\\dfrac")
+                if (u := units_y) not in [1.0, "1", "1.0"]
+                else ""
+            )
+        else:
+            ylabel_updated = ylabel
+            yunit = ""
+
+
+
+        plot_common_data(
+            ax=ax,
+            points=points,
+            x_variable=x_variable,
+            xlabel=xlabel_updated,
+            ylabel=ylabel_updated,
+            xunit= xunit_updated,
+            yunit=yunit,
+            xscale=xscale,
+            yscale=yscale,
+            title=title,
+            plot_types=plot_types,
+            theory_col=self.type_theory,
+            legend=legend,
+            curve_label=curve_label,
+            subplot_label=subplot_label,
+            subplot_label_format=subplot_label_format,
+            curve_groupby=curve_groupby,
+            y_offset_add=y_offset_add,
+            y_offset_mul=y_offset_mul,
+            kwargs_data=kwargs_data,
+            kwargs_xlabel=kwargs_xlabel,
+            kwargs_ylabel=kwargs_ylabel,
+            kwargs_title=kwargs_title,
+            kwargs_legend=kwargs_legend,
+            kwargs_legend_curves=kwargs_legend_curves,
+            kwargs_legend_subplots=kwargs_legend_subplots,
+            kwargs_ticks_curves=kwargs_ticks_curves,
+            kwargs_annotate_curves=kwargs_annotate_curves,
+            **kwargs,
+        )
+
+
+def plot_common_data(
+    ax: plt.Axes | Sequence[plt.Axes],
+    points: pd.DataFrame,
+    x_variable: str | list[str],
+    plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = [
+        "absolute",
+    ],
+    xlabel: str | dict[str, str] | None = None,
+    xunit: str | dict[str, str] = "",
+    theory_col : str = "",
+    ylabel: (
+        str
+        | Literal["fallback"]
+        | None
+        | SequenceNotStr[str | Literal["fallback"] | None]
+    ) = None,
+    yunit: str = "",
+    xscale: str | None = None,
+    yscale: str | None = None,
+    title: str | None = None,
+    legend: bool = True,
+    curve_label: (
+        Literal[
+            "annotate above",
+            "annotate right",
+            "ticks",
+            "legend",
+        ]
+        | None
+    ) = "ticks",
+    subplot_label: Literal["legend"] | None = None,
+    subplot_label_format: str | None = None,
+    curve_groupby: str | list[str] | None = None,
+    apply_normalization: bool = True,
+    shift_correlated: Literal["data", "theory"] | None = "theory",
+    y_offset_add: float | Sequence[float] = 0,
+    y_offset_mul: float | Sequence[float] = 0,
+    kwargs_data: dict[str, Any] | list[dict[str, Any] | None] = {},
+    kwargs_xlabel: dict[str, Any] = {},
+    kwargs_ylabel: dict[str, Any] = {},
+    kwargs_title: dict[str, Any] = {},
+    kwargs_legend: dict[str, Any] = {},
+    kwargs_legend_curves: dict[str, Any] = {},
+    kwargs_legend_subplots: dict[str, Any] = {},
+    kwargs_ticks_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
+    kwargs_annotate_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
+) -> None:
+    """Plot data vs. theory in a way that is not experiment-specific.
+
+    Parameters
+    ----------
+    ax : plt.Axes | Sequence[plt.Axes]
+        Axes to plot on. If more than one axes are given, a ratio plot is drawn on the second one.
+    points : pd.DataFrame
+        The points to be plotted. Needs to have the columns `x_variable`, `"data"` (to plot the data points) and `"theory"` or `"theory_with_normalization"` to plot the theory curves (normalization-uncorrected or corrected, respectively).
+    x_variable : str | list[str]
+        The kinematic variable to put on the x axis. Plots a binned distribution if a list is passed.
+    xlabel : str | None, optional
+        x label of the plot, by default None.
+    ylabel : str | None, optional
+        y label of the plot, by default None.
+    xscale : str | None, optional
+        x scale of the plot, by default no changing of x scale.
+    yscale : str | None, optional
+        y scale of the plot, by default no changing of y scale.
+    title : str | None, optional
+        Title of the plot, by default None.
+    legend : bool, optional
+        If a legend annotating data & theory is shown, by default True.
+    curve_label : Literal["annotate above", "annotate right", "ticks", "legend"] | None, optional
+        Where the curve labels are shown, by default "ticks". If None, no labels are shown.
+    subplot_label : Literal["legend"] | None, optional  # FIXME
+        Where to label the subplot, by default None.
+    subplot_label_format : str | None, optional
+        Format of the subplot label, by default None.
+    chi2_annotation : bool, optional
+        If the χ²/point value is annotated, by default True.
+    chi2_legend : bool, optional
+        If a legend with the total χ² is shown, by default True.
+    curve_groupby : str | list[str] | None, optional
+        Variable(s) to group the curves by, by default no grouping.
+    apply_normalization : bool, optional
+        If the normalization-corrected theory is plotted, by default True.
+    shift_correlated : Literal["data", "theory"], optional
+        Whether to shift data or theory when correlated errors are present, by default "theory". For details, see arXiv:hep-ph/0201195 appendix B.2.
+    theory_min_width : float, optional
+        Width of the theory curve (in units of axes fraction) if there is only one point, by default 0.06.
+    plot_pdf_uncertainty : bool, optional
+        If the PDF uncertainty is plotted around the theory curve, by default True.
+    pdf_uncertainty_convention : Literal["sym", "asym"], optional
+        If the PDF uncertainties should be symmetric ("sym") or asymmetric ("asym"), by default "asym".
+    y_offset_add : float, optional
+        Additive offset by which the curves are separated, by default 0 (no offset).
+    y_offset_mul : float, optional
+        Multiplicative offset by which the curves are separated, by default 0 (no offset). The factor between each curve is `10**y_offset_mul`.
+    kwargs_data : dict[str, Any] | list[dict[str, Any] | None], optional
+        Keyword arguments to pass to `plt.Axes.plot` for plotting the data.
+    kwargs_theory : dict[str, Any] | list[dict[str, Any]  |  None], optional
+        Keyword arguments to pass to `plt.Axes.plot` for plotting the theory.
+    kwargs_theory_unc : dict[str, Any] | list[dict[str, Any]  |  None], optional
+        Keyword arguments to pass to `plt.Axes.fill_between` for plotting the PDF uncertainty.
+    kwargs_xlabel : dict[str, Any], optional
+        Keyword arguments to pass to `plt.Axes.set_xlabel`.
+    kwargs_ylabel : dict[str, Any], optional
+        Keyword arguments to pass to `plt.Axes.set_ylabel`.
+    kwargs_title : dict[str, Any], optional
+        Keyword arguments to pass to `plt.Axes.set_title`.
+    kwargs_legend : dict[str, Any], optional
+        Keyword arguments to pass to `AdditionalLegend` for annotating data & theory.
+    kwargs_legend_chi2 : dict[str, Any], optional
+        Keyword arguments to pass to `AdditionalLegend` for annotating the total χ².
+    kwargs_legend_curves : dict[str, Any], optional
+        Keyword arguments to pass to `AdditionalLegend` for annotating the curve labels.
+    kwargs_ticks_curves : dict[str, Any] | list[dict[str, Any]  |  None], optional
+        Keyword arguments to pass to `plt.Axes.set_yticks` for annotating the curve labels.
+    kwargs_annotate_chi2 : dict[str, Any], optional
+        Keyword arguments to pass to `plt.Axes.annotate` for annotating the χ²/point values.
+    kwargs_annotate_curves : dict[str, Any] | list[dict[str, Any] | None], optional
+        Keyword arguments to pass to `plt.Axes.annotate` for annotating the curve labels.
+    """
+
+    if isinstance(ax, plt.Axes):
+        ax = [ax]
+
+    if not isinstance(y_offset_add, Sequence):
+        y_offset_add = len(ax) * [y_offset_add]
+
+    if not isinstance(y_offset_mul, Sequence):
+        y_offset_mul = len(ax) * [y_offset_mul]
+
+    if len(y_offset_add) < len(ax):
+        raise ValueError("len(y_offset_add) must be equal to len(ax)")
+
+    if len(y_offset_mul) < len(ax):
+        raise ValueError("len(y_offset_mul) must be equal to len(ax)")
+
+    # Data & Theory legend
+    legend_handles = []
+    legend_labels = []
+
+    # bin labels for legend or ticks
+    legend_curve_handles = []
+
+    if curve_groupby is not None:
+        ascending = curve_groupby != "x"  # TODO: replace with PointsGroupBy
+        points = points.sort_values(curve_groupby, ascending=ascending)
+
+    curve_gb = (
+        points.groupby(curve_groupby, sort=False) if curve_groupby is not None else None
+    )
+
+    # enumerate groupby if curve_groupby is given, else just enumerate one tuple (i.e. no iteration)
+    iter_curves_data = (
+        enumerate(curve_gb) if curve_gb is not None else enumerate([(0.0, points)])
+    )
+    for i, (label_i, points_i) in iter_curves_data:
+        points_i = points_i.sort_values(x_variable)
+        
+
+
+        l = None
+
+        kwargs_data_default = (
+            {"markerfacecolor": l.get_color()} if l is not None else {}
+        )
+        kwargs_data_updated = update_kwargs(kwargs_data_default, kwargs_data, i)
+        e = _plot_data_data(
+            ax=ax,
+            points=points_i,
+            x_col=x_variable,
+            theory_col=nc_labels.theory_yaml_to_py[theory_col],
+            index_curve=i,
+            y_offset_add=y_offset_add,
+            y_offset_mul=y_offset_mul,
+            shift_correlated=(shift_correlated == "data"),
+            plot_types=plot_types,
+            kwargs_data=kwargs_data_updated,
+        )
+
+        if e is not None and i == 0:
+            legend_handles.insert(0, e)
+            legend_labels.insert(0, "Data")
+
+
+    if yscale is not None:
+        ax[0].set_yscale(yscale)  # pyright: ignore[reportArgumentType]
+
+    if curve_gb is not None:
+        #print(xlabel)
+        _add_curve_labels(
+            ax,
+            types=plot_types,
+            curve_label_position=curve_label,
+            curve_groupby=curve_gb,
+            x_col=x_variable,
+            y_col=nc_labels.theory_yaml_to_py[theory_col],
+            label=curve_groupby,
+            unit=xunit,
+            y_offset_add=y_offset_add,
+            y_offset_mul=y_offset_mul,
+            legend_curve_handles=legend_curve_handles,
+            kwargs_annotate_curves=kwargs_annotate_curves,
+            kwargs_legend_curves=kwargs_legend_curves,
+            kwargs_tick_curves=kwargs_ticks_curves,
+        )
+
+    x_fallback = x_variable if isinstance(x_variable, str) else x_variable[0]
+    if x_fallback in nc_labels.kinvars_py_to_tex:
+        x_fallback = f"${nc_labels.kinvars_py_to_tex[x_fallback]}$"
+    print(xlabel)
+    print(ylabel)
+    print(xunit)
+    print(yunit)
+    _set_labels(
+        ax=ax,
+        x_variable=x_variable,
+        x_fallback=x_fallback,
+        y_fallback={
+            "absolute": "",
+            "data over theory": r"\dfrac{\text{Data}}{\text{Theory}}",
+            "theory over data": r"\dfrac{\text{Theory}}{\text{Data}}",
+        },
+        x_label=xlabel,
+        x_unit=xunit,
+        y_label=ylabel,
+        y_unit=yunit,
+        title=title,
+        plot_types=plot_types,
+        kwargs_xlabel=kwargs_xlabel,
+        kwargs_ylabel=kwargs_ylabel,
+        kwargs_title=kwargs_title,
+    )
+
+    if legend:
+        kwargs_legend_default = {
+            "order": 2,
+            "parent": ax[0],
+            "handles": legend_handles,
+            "labels": legend_labels,
+        }
+        kwargs_legend_updated = update_kwargs(kwargs_legend_default, kwargs_legend)
+
+        legend_data_theory = AdditionalLegend(**kwargs_legend_updated)
+        ax[0].add_artist(legend_data_theory)
+
+
+    if subplot_label == "legend":
+        if subplot_label_format is None:
+            raise ValueError(
+                "subplot_label_format must be given if subplot_label is 'legend'"
+            )
+
+        A_symbols = {}
+
+        if "data" in points:
+            if points.iloc[0][["Z1", "A1"]].notna().all():
+                A_symbols["A1_sym"] = nc_labels.nucleus_to_latex(
+                    Z=points.iloc[0]["Z1"], A=points.iloc[0]["A1"], show_A=True
+                )
+            if points.iloc[0][["Z2", "A2"]].notna().all():
+                A_symbols["A2_sym"] = nc_labels.nucleus_to_latex(
+                    Z=points.iloc[0]["Z2"], A=points.iloc[0]["A2"], show_A=True
+                )
+
+            subplot_label_str = subplot_label_format.format(
+                **points.iloc[0].to_dict(), **A_symbols
+            )
+        else:
+            raise ValueError(
+                "Either data or theory must be given if subplot_label is 'legend'"
+            )
+
+        kwargs_legend_subplots_default = dict(
+            order=1,
+            parent=ax[0],
+            handles=[Patch()],
+            labels=[subplot_label_str],
+            labelspacing=0,
+            handlelength=0,
+            handleheight=0,
+            handletextpad=0,
+        )
+        kwargs_legend_subplots_updated = update_kwargs(
+            kwargs_legend_subplots_default, kwargs_legend_subplots
+        )
+
+        leg3 = AdditionalLegend(**kwargs_legend_subplots_updated)
+        ax[0].add_artist(leg3)
+
+    if xscale is not None:
+        ax[0].set_xscale(xscale)  # pyright: ignore[reportArgumentType]
+        ax[0].relim()  # otherwise axes autoscaling does not work for some reason
+        if len(ax) > 1:
+            ax[1].set_xscale(xscale)  # pyright: ignore[reportArgumentType]
+            ax[1].relim()
+
+
+
+def _plot_data_data(
+    ax: plt.Axes | Sequence[plt.Axes],
+    points: pd.DataFrame,
+    x_col: str | list[str],
+    theory_col: str = "theory",
+    index_curve: int = 0,
+    num_curves: int = 1,
+    y_offset_add: float | Sequence[float] = 0,
+    y_offset_mul: float | Sequence[float] = 0,
+    shift_correlated: bool = False,
+    ratio_offset: bool = True,
+    plot_types: DataVsTheoryType | Sequence[DataVsTheoryType] = [
+        "absolute",
+        "theory over data",
+    ],
+    kwargs_data: dict[str, Any] | list[dict[str, Any] | None] = {},
+) -> ErrorbarContainer | None:
+
+    ax, plot_types, y_offset_add, y_offset_mul = _check_ax_offsets(
+        ax=ax, types=plot_types, y_offset_add=y_offset_add, y_offset_mul=y_offset_mul
+    )
+
+    # print(ax, plot_types, y_offset_add, y_offset_mul)
+
+    res = None
+
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+
+    if theory_col in points:
+        for i, (ax_i, plot_type_i, y_offset_add_i, y_offset_mul_i) in enumerate(
+            zip(ax, plot_types, y_offset_add, y_offset_mul)
+        ):
+           # print(i)
+            offset_factor = 10 ** (np.array(y_offset_mul_i) * index_curve)
+            offset_summand = np.array(y_offset_add_i) * index_curve
+
+            kwargs_data_default: dict[str, Any] = {
+                "capsize": 1.7,
+                "marker": ".",
+                "markersize": 7,
+                "ls": "",
+                "color": "black",
+                "markerfacecolor": colors[index_curve % len(colors)],
+            }
+
+            if isinstance(x_col, list):
+                xerr = (points[x_col[1]] - points[x_col[0]]) / 2
+                kwargs_data_default["xerr"] = (xerr,)
+            else:
+                xerr = None
+
+            points_data = (
+                points[theory_col] - points["shift_correlated"]
+                if shift_correlated and "shift_correlated" in points
+                else points[theory_col]
+            )
+
+            if "unc_tot" in points:
+                kwargs_data_default["yerr"] = (
+                    _calculate_ratio(
+                        plot_type_i, points["unc_tot"], points_data, points[theory_col]
+                    )
+                    * offset_factor
+                )
+
+            x = points[x_col].mean(axis=1) if isinstance(x_col, list) else points[x_col]
+
+            y = _calculate_ratio(
+                plot_type_i, points_data, points_data, points[theory_col]
+            )
+
+            kwargs_data_updated = update_kwargs(
+                kwargs_data_default, kwargs_data, index_curve
+            )
+
+            e = ax_i.errorbar(
+                x,
+                y * offset_factor + offset_summand,
+                **kwargs_data_updated,
+            )
+
+            e.lines[0].set_markeredgewidth(0.4)
+
+            if i == 0:
+                res = e
+
+            # if len(ax) >= 2:
+            #     if "unc_tot" in points:
+            #         kwargs_data_updated["yerr"] = points["unc_tot"] / y
+
+            #     # TODO: make ratio_offset work if x_col is not a list, i.e. when not plotting a binned distribution
+            #     # if xerr is not None:
+            #     #     x_offsets = (
+            #     #         1.9 * xerr * (1 / (num_curves + 1) * (index_curve + 0.5) - 0.5)
+            #     #     )
+            #     #     x += x_offsets
+
+            #     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+
+            #     kwargs_data_updated["markerfacecolor"] = colors[
+            #         index_curve % len(colors)
+            #     ]
+            #     kwargs_data_updated["markeredgecolor"] = kwargs_data_updated[
+            #         "markerfacecolor"
+            #     ]
+            #     # kwargs_data_updated.pop("xerr")
+            #     ax[1].errorbar(
+            #         x,
+            #         y / y * offset_factors[1] + offset_summands[1],
+            #         **kwargs_data_updated,
+            #     )
+
+    return res

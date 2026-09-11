@@ -26,6 +26,7 @@ kinvars_yaml_to_py = {
     "X": "x",
     "Y": "y",
     "Q2": "Q2",
+    "LOG10Q2":"log_10_Q2",
     "W2": "W2",
     "EHAD": "E_had",
     "EPS": "eps",
@@ -44,12 +45,17 @@ kinvars_yaml_to_py = {
     "PTAVEmax": "pT_average_max",
     "ETADIJETmin": "eta_dijet_min",
     "ETADIJETmax": "eta_dijet_max",
+    "ELAB": "E_lab",
+    "MLL": "M_ll",
+    "MLLMIN": "M_ll_min",
+    "MLLMAX": "M_ll_max",    
 }
 
 kinvars_py_to_tex = {
     "id_bin": r"\text{bin}",
     "sqrt_s": r"\sqrt{s}",
     "Q2": r"Q^2",
+    "LOG10Q2": r"\log_10{Q^2}",
     "x": r"x",
     "y": r"y",
     "E_had": r"E_{\text{hadron}}",
@@ -64,6 +70,10 @@ kinvars_py_to_tex = {
     "eta_max": r"\eta",
     "xi_r": r"\xi_{\text{r}}",
     "xi_f": r"\xi_{\text{f}}",
+    "ELAB": r"E_\mathrm{lab}",
+    "MLL": r"M_{\ell \ell}",
+    "MLLMIN": r"M_{\ell \ell, \mathrm{min}}",
+    "MLLMAX": r"M_{\ell \ell, \mathrm{max}}",    
 }
 
 theory_yaml_to_py = {
@@ -71,6 +81,7 @@ theory_yaml_to_py = {
     "RSIG": "ratio_sigma",
     "SIGIPT": "sigma_pT_integrated",
     "F2": "F2",
+    "FL": "FL",
     "RF2": "ratio_F2",
     "RF2ISO": "ratio_F2_iso",
     "APPLGRID": "applgrid",
@@ -79,12 +90,18 @@ theory_yaml_to_py = {
     "FKTABLE": "fktable",
     "CMS_RSIG_RATIO": "cms_ratio_sigma_double",
     "CMS_RSIG_ETA": "cms_ratio_sigma_eta",
+    "THEO":"THEO",
+    'APPLGRIDSUM': "applgrid_sum",
+    "PINEAPPL": "pineappl",
+    "RPINEAPPL": "rpineappl",
+    'PINEAPPLASYM': "pineappl_charge_asymmetry",
 }
 
 theory_py_to_tex = {
     "sigma": r"\sigma",
     "ratio_sigma": r"\dfrac{\sigma^{A}}{\sigma^{\text{D}}}",
     "F2": r"F_2",
+    "FL":r"F_L",
     "ratio_F2": r"\dfrac{F_2^{A}}{F_2^{\text{D}}}",
 }
 
