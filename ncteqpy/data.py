@@ -931,6 +931,345 @@ class Datasets(jaml.YAMLWrapper):
             kwargs_cuts_labels=kwargs_cuts_labels,
         )
 
+    # TODO: cleanup
+    def plot_grouped(
+        self,
+        id_dataset: int | Sequence[int] | None = None,
+        type_experiment: str | None = None,
+        x_variable: str | list[str] | Literal["fallback"] | None = "fallback",
+        xlabel: str | dict[str, str] | Literal["fallback"] | None = "fallback",
+        xunit: str | dict[str, str] = "fallback",
+        ylabel: str | Literal["fallback"] | None = "fallback",
+        yunit: str = "fallback",
+        xscale: str | None = None,
+        yscale: str | None = None,
+        title: str | None = None,
+        legend: LegendPos = "upper left",
+        legend_labels: (
+            dict[
+                Literal[
+                    "data",
+                    "data outside cuts",
+                    "data outside additional cuts",
+                ],
+                str,
+            ]
+            | None
+        ) = None,
+        curve_label: (
+            Literal[
+                "annotate above",
+                "annotate right",
+                "ticks",
+                "legend",
+            ]
+            | None
+        ) = "ticks",
+        ax: plt.Axes | Sequence[plt.Axes] | None = None,
+        subplot_groupby: str | list[str] | None = None,
+        subplot_label: Literal["legend"] | None = "legend",
+        subplot_label_format: str | None = None,
+        info_legend: LegendPos = "upper left",
+        curve_groupby: str | list[str] | Literal["fallback"] | None = "fallback",
+        curve_aggregate: str | list[str] | Literal["fallback"] | None = None,
+        curve_aggregate_func: (
+            str | Callable[[pd.Series[float]], pd.Series[float]]
+        ) = "mean",
+        plot_data_outside_cuts: bool = False,
+        additional_cuts: Cut | Sequence[Cut] = [],
+        y_offset_add: float | None = None,
+        y_offset_mul: float | None = None,
+        kwargs_subplots: dict[str, Any] = {},
+        kwargs_data: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_data_outside_cuts: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_data_outside_additional_cuts: (
+            dict[str, Any] | list[dict[str, Any] | None]
+        ) = {},
+        kwargs_xlabel: dict[str, Any] = {},
+        kwargs_ylabel: dict[str, Any] = {},
+        kwargs_title: dict[str, Any] = {},
+        kwargs_legend: dict[str, Any] = {},
+        kwargs_legend_info: dict[str, Any] = {},
+        kwargs_legend_curves: dict[str, Any] = {},
+        kwargs_legend_subplots: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_ticks_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
+        kwargs_annotate_curves: dict[str, Any] | list[dict[str, Any] | None] = {},
+    ) -> AxesGrid | None:
+        if id_dataset is None:
+            if type_experiment is None:
+                raise ValueError(
+                    "Please provide either `id_dataset` or `type_experiment`"
+                )
+            else:
+                points = self.points.query("type_experiment == @type_experiment")
+                id_dataset = cast(
+                    Sequence[int], points["id_dataset"].unique()
+                )  # actually npt.NDArray[np.int_]
+        else:
+            if isinstance(id_dataset, int):
+                id_dataset = [id_dataset]
+
+            points = self.points.query("id_dataset in @id_dataset")
+            types_experiment = points["type_experiment"].unique()
+            if len(types_experiment) == 1:
+                if type_experiment is None:
+                    type_experiment = cast(str, types_experiment[0])
+                elif not type_experiment == types_experiment[0]:
+                    raise ValueError(
+                        "Dataset(s) given by id_dataset are not of type_experiment"
+                    )
+            else:
+                raise ValueError(
+                    "Please provide datasets that are each of the same type_experiment"
+                )
+
+        if isinstance(ax, plt.Axes):
+            ax = [ax]
+
+        # data points outside the cuts are in the column data_outside_cuts in the merged DataFrame. This makes plotting them easier
+        points_merged = (
+            pd.concat(
+                [
+                    points,
+                    self.points_outside_cuts.rename(
+                        columns={"data": "data_outside_cuts"}
+                    ),
+                ],
+                ignore_index=True,
+            )
+            if plot_data_outside_cuts
+            else points
+        )
+
+        subplot_gb = (
+            points_merged[points_merged["id_dataset"].isin(id_dataset)].groupby(
+                subplot_groupby
+            )
+            if subplot_groupby is not None
+            else None
+        )
+
+        kwargs_subplots_default = {
+            "sharex": True,
+            "sharey": "row",
+            "layout": "constrained",
+        }
+        kwargs_subplots_updated = util.update_kwargs(
+            kwargs_subplots_default, kwargs_subplots
+        )
+
+        n_real = len(subplot_gb) if subplot_gb is not None else 1
+
+        if ax is None:
+            ax_grid = AxesGrid(n_real=n_real, **kwargs_subplots_updated)
+            ax_i = ax_grid.ax_real
+        else:
+            if len(ax) != n_real:
+                raise ValueError(f"len(ax) must be {n_real}")
+
+            ax_grid = None
+            ax_i = ax
+
+        if info_legend is not None:
+            ax_legend_info = (
+                ax_grid.locate_ax(info_legend) if ax_grid is not None else ax_i[0]
+            )
+
+            labels_info = self.index[
+                self.index["id_dataset"].isin(points["id_dataset"])
+            ]
+            # labels_info_legend = [
+            #     f"{labels_info['experiment']} (ID {labels_info["id_dataset"]})",
+            #     f"${labels.reaction_to_latex(labels_info["reaction"])}$",
+            # ]
+            labels_info_legend = labels.format_dataset_info(labels_info)
+
+            kwargs_legend_info_default = {
+                "order": -1,
+                "parent": ax_legend_info,
+                "handles": [Patch()] * len(labels_info_legend),
+                "labels": labels_info_legend,
+                "labelspacing": 0.25,
+                "handlelength": 0,
+                "handleheight": 0,
+                "handletextpad": 0,
+                "fontsize": "small",
+            }
+            kwargs_legend_info_updated = util.update_kwargs(
+                kwargs_legend_info_default, kwargs_legend_info
+            )
+
+            ax_legend_info.add_artist(AdditionalLegend(**kwargs_legend_info_updated))
+
+        ax_iter = zip(
+            ax_i,
+            # (
+            #     (
+            #         np.atleast_2d(np.asarray(ax_ij)).T
+            #         for ax_ij in batched(ax_i, len(plot_types))
+            #     )
+            #     if ax_grid is None
+            #     else ax_grid.ax_unit_real
+            # ),
+            (subplot_gb if subplot_gb is not None else [(np.nan, points)]),
+        )
+
+        for i, (ax_ij, (ax_gb_val_i, points_i)) in enumerate(ax_iter):
+            labels_x = self.labels_x.loc[points_i["id_dataset"]].iloc[0].dropna()
+            labels_y = self.labels_y.loc[points_i["id_dataset"]].iloc[0].dropna()
+
+            if xlabel == "fallback":
+                xlabel_updated = {}
+            elif isinstance(xlabel, str):
+                if x_variable is None or x_variable == "fallback":
+                    xlabel_updated = {"fallback": xlabel}
+                else:
+                    xlabel_updated = {
+                        data_vs_theory._get_kinematic_variable(x_variable): xlabel
+                    }
+            elif xlabel is None:
+                if x_variable is None or x_variable == "fallback":
+                    xlabel_updated = {"fallback": ""}
+                else:
+                    xlabel_updated = {
+                        data_vs_theory._get_kinematic_variable(x_variable): ""
+                    }
+            else:
+                xlabel_updated = xlabel
+
+            if xunit == "fallback":
+                xunit_updated = {}
+            elif isinstance(xunit, str):
+                if x_variable is None or x_variable == "fallback":
+                    xunit_updated = {"fallback": xunit}
+                else:
+                    xunit_updated = {
+                        data_vs_theory._get_kinematic_variable(x_variable): xunit
+                    }
+            elif xunit is None:
+                if x_variable is None or x_variable == "fallback":
+                    xunit_updated = {"fallback": ""}
+                else:
+                    xunit_updated = {
+                        data_vs_theory._get_kinematic_variable(x_variable): ""
+                    }
+            else:
+                xunit_updated = xunit
+
+            if labels_x.size > 0:
+                xlabel_updated = {
+                    str(k): str(s["LabelX"].iloc[0]).replace("\\frac", "\\dfrac")
+                    for k, s in labels_x.groupby(level=1)
+                } | xlabel_updated
+
+                xunit_updated = {
+                    str(k): (
+                        str(u).replace("\\frac", "\\dfrac")
+                        if (u := s["UnitX"].iloc[0]) != 1.0
+                        else ""
+                    )
+                    for k, s in labels_x.groupby(level=1)
+                } | xunit_updated
+
+            for v in subplot_groupby, curve_groupby:
+                if isinstance(v, list):
+                    for v_i in v:
+                        if v_i not in xlabel_updated:
+                            xlabel_updated[v_i] = "fallback"
+                        if v_i not in xunit_updated:
+                            xunit_updated[v_i] = ""
+                elif isinstance(v, str):
+                    if v not in xlabel_updated and v != "fallback":
+                        xlabel_updated[v] = "fallback"
+                    if v not in xunit_updated and v != "fallback":
+                        xunit_updated[v] = ""
+
+            if ylabel == "fallback" and labels_y.size > 0:
+                ylabel_updated = str(labels_y["LabelY"]).replace("\\frac", "\\dfrac")
+                yunit = (
+                    str(u).replace("\\frac", "\\dfrac")
+                    if (u := labels_y["UnitY"]) != 1.0
+                    else ""
+                )
+            else:
+                ylabel_updated = ylabel
+                yunit = ""
+
+            plot_legend = legend is not None and (
+                ax_grid is None
+                or ax_grid is not None
+                and ax_grid.locate_ax(legend) == ax_ij
+            )
+
+            data_vs_theory.plot(
+                type_experiment=type_experiment,
+                points=points_i,
+                ax=ax_ij,
+                x_variable=x_variable,
+                xlabel=xlabel_updated,
+                xunit=xunit_updated,
+                ylabel=ylabel_updated,
+                yunit=yunit,
+                xscale=xscale,
+                yscale=yscale,
+                title=title,
+                legend=plot_legend,
+                legend_labels=legend_labels,  # pyright: ignore[reportArgumentType]
+                curve_label=curve_label,
+                subplot_label_format=subplot_label_format,
+                curve_groupby=curve_groupby,
+                curve_aggregate=curve_aggregate,
+                curve_aggregate_func=curve_aggregate_func,
+                additional_cuts=additional_cuts,
+                y_offset_add=y_offset_add,
+                y_offset_mul=y_offset_mul,
+                kwargs_data=kwargs_data,
+                kwargs_data_outside_cuts=kwargs_data_outside_cuts,
+                kwargs_data_outside_additional_cuts=kwargs_data_outside_additional_cuts,
+                kwargs_xlabel=kwargs_xlabel,
+                kwargs_ylabel=kwargs_ylabel,
+                kwargs_title=kwargs_title,
+                kwargs_legend=kwargs_legend,
+                kwargs_legend_curves=kwargs_legend_curves,
+                kwargs_legend_subplots=util.get_kwargs(kwargs_legend_subplots, i),
+                kwargs_ticks_curves=kwargs_ticks_curves,
+                kwargs_annotate_curves=kwargs_annotate_curves,
+            )
+
+            if subplot_groupby is not None and subplot_label == "legend":
+                label = _format_curve_label(
+                    subplot_groupby,
+                    ax_gb_val_i,  # pyright: ignore[reportArgumentType]
+                    variables_labels=xlabel_updated,
+                    variables_units=xunit_updated,
+                )
+
+                kwargs_legend_subplots_default = dict(
+                    order=-2,
+                    parent=ax_ij,
+                    handles=[Patch()],
+                    labels=[label],
+                    labelspacing=0,
+                    handlelength=0,
+                    handleheight=0,
+                    handletextpad=0,
+                    fontsize="small",
+                )
+                kwargs_legend_subplots_updated = util.update_kwargs(
+                    kwargs_legend_subplots_default,
+                    kwargs_legend_subplots,
+                    i,
+                )
+
+                subplot_legend = AdditionalLegend(**kwargs_legend_subplots_updated)
+
+                ax_ij.add_artist(subplot_legend)
+
+        if ax_grid is not None:
+            ax_grid.prune_labels()
+
+        return ax_grid
+
 
 class Dataset:
 
